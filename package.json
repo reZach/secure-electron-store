@@ -1,0 +1,28 @@
+{
+  "name": "secure-electron-store",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "babel": "babel raw.js -o index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/reZach/secure-electron-store.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/reZach/secure-electron-store/issues"
+  },
+  "homepage": "https://github.com/reZach/secure-electron-store#readme",
+  "devDependencies": {
+    "@babel/cli": "^7.7.7",
+    "@babel/core": "^7.7.7",
+    "@babel/preset-env": "^7.7.7"
+  },
+  "dependencies": {
+    "electron": "7.1.8"
+  }
+}
