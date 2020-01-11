@@ -1,20 +1,18 @@
 // https://dev.to/therealdanvega/creating-your-first-npm-package-2ehf
 const fs = require("fs");
 const path = require("path");
-const electron = require("electron");
 
 export const REQUESTFILE = "SES-RequestFile";
 export const WRITEFILE = "SES-WriteFile";
 export const REQUESTFILEREPLY = "SES-RequestFileReply";
 export const WRITEFILEREPLY = "SES-WriteFileReply";
 
-class Bindings {
-    constructor(ipcMain, options){
+export default class Bindings {
+    constructor(ipcMain, basePath, options){
         this.ipcMain = ipcMain;
 
-        let appPath = electron.app.getPath("userData");
         let filename = typeof options.filename === "undefined" ? "config.json" : options.filename;
-        this.filepath = path.join(appPath, filename);
+        this.filepath = path.join(basePath, filename);
 
         this.bindEvents();
     }
@@ -45,5 +43,3 @@ class Bindings {
         });
     }
 }
-
-export default Bindings;
