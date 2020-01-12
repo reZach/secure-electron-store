@@ -1,0 +1,2 @@
+# secure-electron-store
+This is a close copy/fork of [electron-store](https://github.com/sindresorhus/electron-store) that uses IPC (instead of having 'fs' access directly) to communicate and marshal requests to read/write your local config file. This module is specifically being built to be used within [secure-electron-template](https://github.com/reZach/secure-electron-template).
