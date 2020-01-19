@@ -14,7 +14,7 @@ class Inner extends Conf {
         super(options);
     }
 }
-class Store {
+export default class Store {
     constructor(app){
         const defaultCwd = app.getPath("userData");
         this.store = new Inner({
@@ -58,5 +58,3 @@ class Store {
         });
     };
 }
-
-export default Store; 
