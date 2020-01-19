@@ -5,19 +5,10 @@ export const writeConfigRequest = "WriteConfig-Request";
 export const readConfigResponse = "ReadConfig-Response";
 export const writeConfigResponse = "WriteConfig-Response";
 
-class Inner extends Conf {
-    constructor(options){        
-        options = {
-            ...options
-        };
-
-        super(options);
-    }
-}
 export default class Store {
     constructor(app){
         const defaultCwd = app.getPath("userData");
-        this.store = new Inner({
+        this.store = new Conf({
             cwd: defaultCwd
         });
 
