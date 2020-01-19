@@ -1,5 +1,3 @@
-const electron = require("electron");
-const path = require("path");
 const Conf = require("conf");
 
 export const readConfigRequest = "ReadConfig-Request";
@@ -7,56 +5,58 @@ export const writeConfigRequest = "WriteConfig-Request";
 export const readConfigResponse = "ReadConfig-Response";
 export const writeConfigResponse = "WriteConfig-Response";
 
-class Store extends Conf {
-    constructor(options){
-        const defaultCwd = electron.app.getPath("userData");        
+class Inner extends Conf {
+    constructor(options){        
         options = {
             ...options
         };
-        
-        // override if present
-        if (options.cwd){
-            options.cwd = path.isAbsolute(options.cwd) ? options.cwd : path.join(defaultCwd, options.cwd);
-        } else {
-            options.cwd = defaultCwd;
-        }
 
         super(options);
     }
 }
-const store = new Store();
+class Store {
+    constructor(electron){
+        const defaultCwd = electron.app.getPath("userData");
+        this.store = new Inner({
+            cwd: defaultCwd
+        });
 
-export const preloadBindings = function (ipcRenderer) {
-    return {
-        send: (channel, key, value) => {
-            let validChannels = [readConfigRequest, writeConfigRequest];
-            if (validChannels.includes(channel)){
-                if (channel === readConfigRequest){
-                    ipcRenderer.send(channel, {key});
-                } else if (channel === writeConfigRequest){
-                    ipcRenderer.send(channel, {key, value});
+        this.validSendChannels = [readConfigRequest, writeConfigRequest];
+        this.validReceiveChannels = [readConfigResponse, writeConfigResponse];
+    }
+
+    preloadBindings(ipcRenderer) {
+        return {
+            send: (channel, key, value) => {                
+                if (this.validSendChannels.includes(channel)){
+                    if (channel === readConfigRequest){
+                        ipcRenderer.send(channel, {key});
+                    } else if (channel === writeConfigRequest){
+                        ipcRenderer.send(channel, {key, value});
+                    }
+                }
+            },
+            onReceive: (channel, func) => {                
+                if (this.validReceiveChannels.includes(channel)){
+                    
+                    // Deliberately strip event as it includes "sender"
+                    ipcRenderer.on(channel, (event, args) => func(args));                
                 }
             }
-        },
-        onReceive: (channel, func) => {
-            let validChannels = [readConfigResponse, writeConfigResponse];
-            if (validChannels.includes(channel)){
-                
-                // Deliberately strip event as it includes "sender"
-                ipcRenderer.on(channel, (event, args) => func(args));                
-            }
-        }
+        };
+    }
+
+    mainBindings(ipcMain, browserWindow) {
+        ipcMain.on(readConfigRequest, (IpcMainEvent, args) => {        
+            let value = this.store.get(args.key);
+            browserWindow.webContents.send(readConfigResponse, value);
+        });
+    
+        ipcMain.on(writeConfigRequest, (IpcMainEvent, args) => {
+            this.store.set(args.key, args.value);
+            browserWindow.webContents.send(writeConfigResponse, true);
+        });
     };
-};
+}
 
-export const mainBindings = function(ipcMain, browserWindow) {
-    ipcMain.on(readConfigRequest, (IpcMainEvent, args) => {        
-        let value = store.get(args.key);
-        browserWindow.webContents.send(readConfigResponse, value);
-    });
-
-    ipcMain.on(writeConfigRequest, (IpcMainEvent, args) => {
-        store.set(args.key, args.value);
-        browserWindow.webContents.send(writeConfigResponse, true);
-    });
-};
+export default Store; 
