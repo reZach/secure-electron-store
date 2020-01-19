@@ -1,3 +1,4 @@
+const electron = require("electron");
 const Conf = require("conf");
 
 export const readConfigRequest = "ReadConfig-Request";
@@ -6,8 +7,8 @@ export const readConfigResponse = "ReadConfig-Response";
 export const writeConfigResponse = "WriteConfig-Response";
 
 export default class Store {
-    constructor(app){
-        const defaultCwd = app.getPath("userData");
+    constructor(){
+        const defaultCwd = (electron.app || electron.remote.app).getPath("userData");
         this.store = new Conf({
             cwd: defaultCwd
         });
