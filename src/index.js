@@ -9,7 +9,10 @@ export const writeConfigResponse = "WriteConfig-Response";
 
 class Store extends Conf {
     constructor(options){
-        const defaultCwd = electron.app.getPath("userData");
+        const defaultCwd = electron.app.getPath("userData");        
+        options = {
+            ...options
+        };
         
         // override if present
         if (options.cwd){
