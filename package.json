@@ -1,10 +1,10 @@
 {
   "name": "secure-electron-store",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "",
-  "main": "index.js",
+  "main": "lib/index.js",
   "scripts": {
-    "babel": "babel raw.js -o index.js"
+    "build": "npx babel ./src -d ./lib"
   },
   "repository": {
     "type": "git",
@@ -23,6 +23,7 @@
     "@babel/preset-env": "^7.7.7"
   },
   "dependencies": {
+    "conf": "^6.2.0",
     "electron": "7.1.8"
   }
 }
