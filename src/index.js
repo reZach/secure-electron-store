@@ -7,10 +7,10 @@ export const readConfigResponse = "ReadConfig-Response";
 export const writeConfigResponse = "WriteConfig-Response";
 
 export default class Store {
-    constructor(){
-        const defaultCwd = (electron.app || electron.remote.app).getPath("userData");
+    constructor(path){
+        if (typeof path === "undefined" || path.length <= 0) path = electron.app.getPath("userData");        
         this.store = new Conf({
-            cwd: defaultCwd
+            cwd: path
         });
 
         this.validSendChannels = [readConfigRequest, writeConfigRequest];
