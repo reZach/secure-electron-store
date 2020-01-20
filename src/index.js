@@ -1,17 +1,26 @@
-const electron = require("electron");
-const Conf = require("conf");
+const path = require("path");
 
+const defaultOptions = {
+    path: ""
+};
+
+// Electron-specific; must match mainIpc
 export const readConfigRequest = "ReadConfig-Request";
 export const writeConfigRequest = "WriteConfig-Request";
 export const readConfigResponse = "ReadConfig-Response";
 export const writeConfigResponse = "WriteConfig-Response";
 
 export default class Store {
-    constructor(path){
-        if (typeof path === "undefined" || path.length <= 0) path = electron.app.getPath("userData");        
-        this.store = new Conf({
-            cwd: path
-        });
+    constructor(options){
+        if (typeof options === "undefined"){
+            this.options = {...defaultOptions};
+        } else if (typeof options !== "object"){
+            throw "options must be of type 'object'!";
+        } else {
+            this.options = options;
+        }
+        console.log(this.options);
+        this.options.path = path.join(this.options.path, "data.json");
 
         this.validSendChannels = [readConfigRequest, writeConfigRequest];
         this.validReceiveChannels = [readConfigResponse, writeConfigResponse];
@@ -38,15 +47,24 @@ export default class Store {
         };
     }
 
-    mainBindings(ipcMain, browserWindow) {
-        ipcMain.on(readConfigRequest, (IpcMainEvent, args) => {        
-            let value = this.store.get(args.key);
-            browserWindow.webContents.send(readConfigResponse, value);
+    mainBindings(ipcMain, browserWindow, fs) {
+        const { path } = this.options;
+
+        console.log("mainBindings");
+        ipcMain.on(readConfigRequest, (IpcMainEvent, args) => {
+            console.log(readConfigRequest);
+            fs.readFile(path, (error, data) => {
+                console.log(`${readConfigRequest} read file`);
+                browserWindow.webContents.send(readConfigResponse, data);
+            });
         });
     
         ipcMain.on(writeConfigRequest, (IpcMainEvent, args) => {
-            this.store.set(args.key, args.value);
-            browserWindow.webContents.send(writeConfigResponse, true);
+            console.log(`${writeConfigRequest} - path: ${path}`);
+            fs.writeFile(path, JSON.stringify(args), (error) => {
+                console.log(`${writeConfigRequest} write file`);
+                browserWindow.webContents.send(writeConfigResponse, true);
+            });
         });
     };
 }
