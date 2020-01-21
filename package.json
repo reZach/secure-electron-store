@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "conf": "^6.2.0",
-    "electron": "^7.1.9"
+    "electron": "^7.1.9",
+    "msgpack": "^1.0.3"
   }
 }
