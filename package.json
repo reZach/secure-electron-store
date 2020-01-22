@@ -21,10 +21,5 @@
     "@babel/cli": "^7.7.7",
     "@babel/core": "^7.7.7",
     "@babel/preset-env": "^7.7.7"
-  },
-  "dependencies": {
-    "conf": "^6.2.0",
-    "electron": "^7.1.9",
-    "msgpack": "^1.0.3"
   }
 }
