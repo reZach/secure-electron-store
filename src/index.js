@@ -22,12 +22,26 @@ export default class Store {
 
         if (typeof options !== "undefined") {
             this.options = Object.assign(this.options, options);
+        } else {
+            // We are likely in the renderer process if
+            // process is defined; if so, set the path based
+            // on the process variable
+            if (typeof process === "object"){
+                try {
+                    let arg = process.argv.filter(p => p.indexOf("storePath:") >= 0)[0];
+                    this.options.path = arg.substr(arg.indexOf(":") + 1);
+
+                    if (this.options.debug) console.log(`${this.logPrepend}renderer initializing. Parsed 'storePath' value: '${this.options.path}'.`);
+                } catch (error) {
+                    throw "Could not find 'additionalArguments' value beginning with 'storePath:' in your BrowserWindow. Please ensure this is set!";
+                }
+            }
         }
         this.options.path = path.join(this.options.path, this.options.filename);
         this.validSendChannels = [readConfigRequest, writeConfigRequest];
         this.validReceiveChannels = [readConfigResponse, writeConfigResponse];
 
-        if (this.options.debug) console.log(`${this.logPrepend}Intialized. Data file: '${this.options.path}'.`);
+        if (this.options.debug) console.log(`${this.logPrepend}Initialized store. Data file: '${this.options.path}'.`);
     }
 
     preloadBindings(ipcRenderer, fs) {
@@ -48,6 +62,7 @@ export default class Store {
         
         return {
             initial: dataInFile,
+            path,
             send: (channel, key, value) => {
                 if (this.validSendChannels.includes(channel)) {
                     if (channel === readConfigRequest) {
