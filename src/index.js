@@ -1,9 +1,12 @@
 import { encode, decode } from "@msgpack/msgpack";
+const crypto = require("crypto");
 const path = require("path");
 
 const defaultOptions = {
     debug: true,
-    msgpack: true,
+    minify: true,
+    encrypt: true,
+    passcode: "",
     path: "",
     filename: "data",
     extension: ".json"
@@ -17,8 +20,14 @@ export const writeConfigResponse = "WriteConfig-Response";
 
 export default class Store {
     constructor(options) {
+        this.options = defaultOptions;
         this.filedata = undefined;
-        this.options = defaultOptions;                
+        
+        // encrypted-related variables
+        this.iv = undefined;
+        this.ivFile;
+        
+        // log-related variables
         const logPrepend = "[secure-electron-store:";
         this.mainLog = `${logPrepend}main]=>`;
         this.rendererLog = `${logPrepend}renderer]=>`;
@@ -42,6 +51,7 @@ export default class Store {
             }
         }
         
+        this.ivFile = path.join(this.options.path, "iv.txt");
         this.options.path = path.join(this.options.path, `${this.options.filename}${this.options.extension}`);
         this.validSendChannels = [readConfigRequest, writeConfigRequest];
         this.validReceiveChannels = [readConfigResponse, writeConfigResponse];
@@ -58,7 +68,7 @@ export default class Store {
 
     preloadBindings(ipcRenderer, fs) {
         const {
-            msgpack,
+            minify,
             debug,
             path
         } = this.options;
@@ -71,14 +81,14 @@ export default class Store {
             initial = fs.readFileSync(path);
 
             if (typeof initial !== "undefined"){
-                if (msgpack){
+                if (minify){
                     dataInFile = decode(initial);
                 } else {
                     dataInFile = JSON.parse(initial);
                 }
             }
         } catch (error) {
-            console.error(`${this.rendererLog} encountered error '${error}' when trying to read file '${path}'. This file is probably corrupted or does not exist; defaulting file value to '{}'.`);
+            console.error(`${this.rendererLog} encountered error '${error}' when trying to read file '${path}'. This file is probably corrupted, does not exist or is empty; defaulting file value to '{}'.`);
 
             dataInFile = {};
         }
@@ -130,10 +140,39 @@ export default class Store {
 
     mainBindings(ipcMain, browserWindow, fs) {
         const {
-            msgpack,
+            minify,
             debug,
+            encrypt,
             path
         } = this.options;
+
+        const getIv = function(){
+            console.warn("getIv");
+            console.warn(this.iv);
+            if (typeof this.iv !== "undefined"){
+                return this.iv;
+            }
+
+            let rawIv;
+            try {
+
+                // Does file exist? Throws exception if does not exist
+                fs.accessSync(this.ivFile);
+                rawIv = fs.readFileSync(this.ivFile);
+            } catch (error) {
+                
+                console.warn("file doesn't exist");
+                // File does not exist, create file
+                let randomBytes = crypto.randomBytes(32).toString("hex").slice(0, 16);
+                rawIv = randomBytes;
+
+                fs.writeFileSync(this.ivFile, randomBytes);
+            }
+            console.warn(rawIv);
+            console.warn(typeof rawIv);
+
+            this.iv = rawIv;
+        }.bind(this);
 
         // Anytime the renderer process requests for a file read
         ipcMain.on(readConfigRequest, (IpcMainEvent, args) => {
@@ -153,7 +192,13 @@ export default class Store {
 
                 let dataToRead = data;
 
-                if (msgpack){
+                if (encrypt){
+                    getIv();
+                    const decipher = crypto.createDecipheriv("aes-256-cbc", "abc", this.iv);
+                    dataToRead = Buffer.concat([decipher.update(dataToRead), decipher.final()]);
+                }
+
+                if (minify){
                     dataToRead = decode(dataToRead);
                 } else {
                     dataToRead = JSON.parse(dataToRead);
@@ -178,12 +223,18 @@ export default class Store {
                 this.filedata[args.key] = args.value;
                 let dataToWrite = this.filedata;
 
-                if (msgpack){
+                if (minify){
                     dataToWrite = encode(dataToWrite);
                 } else {
                     dataToWrite = JSON.stringify(dataToWrite);
-                }                
-                
+                }
+
+                if (encrypt){
+                    getIv();
+                    const cipher = crypto.createCipheriv("aes-256-cbc", "abc", this.iv);
+                    dataToWrite = Buffer.concat([cipher.update(dataToWrite), cipher.final()]);
+                }
+
                 fs.writeFile(path, dataToWrite, (error) => {
                     debug ? console.log(`${this.mainLog} wrote "'${args.key}':'${args.value}'" to file '${path}'.`) : null;
                     browserWindow.webContents.send(writeConfigResponse, {
@@ -199,7 +250,7 @@ export default class Store {
             if (typeof this.filedata === "undefined") {
                 fs.readFile(path, (error, data) => {
                     if (error){
-                        console.error(`${this.mainLog} encountered error '${error}' when trying to read file '${path}'. This file is probably corrupted or does not exist; defaulting file value to '{}'.`);
+                        console.error(`${this.mainLog} encountered error '${error}' when trying to read file '${path}'. This file is probably corrupted, does not exist or is empty; defaulting file value to '{}'.`);
 
                         this.filedata = {};
                         writeToFile();
@@ -210,14 +261,14 @@ export default class Store {
                     let dataInFile = {};
                     try {
                         if (typeof data !== "undefined") {
-                            if (msgpack){
+                            if (minify){
                                 dataInFile = decode(data);
                             } else {
                                 dataInFile = JSON.parse(data);
                             }                            
                         }
                     } catch (error) {
-                        console.error(`${this.mainLog} encountered error '${error}' when trying to read file '${path}'. This file is probably corrupted or does not exist; defaulting file value to '{}'.`);
+                        console.error(`${this.mainLog} encountered error '${error}' when trying to read file '${path}'. This file is probably corrupted, does not exist or is empty; defaulting file value to '{}'.`);
                         
                         this.filedata = {};
                         writeToFile();
