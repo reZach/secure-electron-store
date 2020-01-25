@@ -20,6 +20,10 @@
   "devDependencies": {
     "@babel/cli": "^7.7.7",
     "@babel/core": "^7.7.7",
-    "@babel/preset-env": "^7.7.7"
+    "@babel/preset-env": "^7.7.7",
+    "babel-preset-minify": "^0.5.1"
+  },
+  "dependencies": {
+    "@msgpack/msgpack": "^1.11.0"
   }
 }
