@@ -6,7 +6,7 @@ const defaultOptions = {
     debug: true,
     minify: true,
     encrypt: true,
-    passcode: "",
+    passkey: "",
     path: "",
     filename: "data",
     extension: ".json"
@@ -17,11 +17,22 @@ export const readConfigRequest = "ReadConfig-Request";
 export const writeConfigRequest = "WriteConfig-Request";
 export const readConfigResponse = "ReadConfig-Response";
 export const writeConfigResponse = "WriteConfig-Response";
+export const deleteConfigRequest = "DeleteConfig-Request";
+export const deleteConfigResponse = "DeleteConfig-Response";
+const savePasskeyRequest = "SavePasskey-Request";
+const savePasskeyResponse = "SavePasskey-Response";
+
+// Useful
+const generateIv = function(){
+    return crypto.randomBytes(32).toString("hex").slice(0, 16);
+}
 
 export default class Store {
     constructor(options) {
         this.options = defaultOptions;
-        this.filedata = undefined;
+        this.fileData = undefined;
+        this.initialFileData = undefined;
+        this.initialFileDataParsed = false;
         
         // encrypted-related variables
         this.iv = undefined;
@@ -35,7 +46,7 @@ export default class Store {
         // Merge any options the user passed in
         if (typeof options !== "undefined") {
             this.options = Object.assign(this.options, options);
-        }        
+        }
 
         // Only run the following code in the renderer
         // process; we can determine if this is the renderer
@@ -53,8 +64,8 @@ export default class Store {
         
         this.ivFile = path.join(this.options.path, "iv.txt");
         this.options.path = path.join(this.options.path, `${this.options.filename}${this.options.extension}`);
-        this.validSendChannels = [readConfigRequest, writeConfigRequest];
-        this.validReceiveChannels = [readConfigResponse, writeConfigResponse];
+        this.validSendChannels = [readConfigRequest, writeConfigRequest, savePasskeyRequest, deleteConfigRequest];
+        this.validReceiveChannels = [readConfigResponse, writeConfigResponse, savePasskeyResponse, deleteConfigResponse];
 
         // Log that we finished initialization
         if (this.options.debug) {
@@ -66,36 +77,96 @@ export default class Store {
         }
     }
 
+    // Gets the IV value; or optionally creates
+    // a new one if it does not already exist
+    getIv(fs){
+        if (typeof this.iv !== "undefined"){
+            return true;
+        }
+    
+        let rawIv;
+        try {
+    
+            // Does file exist? Throws exception if does not exist
+            fs.accessSync(this.ivFile);
+            rawIv = fs.readFileSync(this.ivFile);
+        } catch (error) {
+            
+            // File does not exist, create file
+            let randomBytes = generateIv();
+            rawIv = randomBytes;
+    
+            fs.writeFileSync(this.ivFile, randomBytes);
+        }
+    
+        this.iv = rawIv;
+    }
+
     preloadBindings(ipcRenderer, fs) {
         const {
             minify,
             debug,
+            encrypt,
             path
         } = this.options;
         
-        // Read the file synchronously so we have access
-        // to it's contents right away 
-        let initial;
-        let dataInFile = {};
+        // Initially read the file contents,
+        // but do not decrypt/unminify until we
+        // try to access it. This gives the user
+        // the chance to enter a passkey if they've
+        // chosen to protect their configs with a passkey
         try {
-            initial = fs.readFileSync(path);
-
-            if (typeof initial !== "undefined"){
-                if (minify){
-                    dataInFile = decode(initial);
-                } else {
-                    dataInFile = JSON.parse(initial);
-                }
-            }
+            this.initialFileData = fs.readFileSync(path);
         } catch (error) {
             console.error(`${this.rendererLog} encountered error '${error}' when trying to read file '${path}'. This file is probably corrupted, does not exist or is empty; defaulting file value to '{}'.`);
-
-            dataInFile = {};
         }
 
         return {
-            initial: dataInFile,
             path,
+            setPasskey: (passkey) => {
+                this.options.passkey = passkey;
+
+                ipcRenderer.send(savePasskeyRequest, {
+                    passkey
+                });
+            },
+            initial: () => {
+                if (this.initialFileDataParsed){
+                    return this.initialFileData;
+                }
+
+                if (typeof this.initialFileData !== "undefined"){
+                    debug ? console.log(`${this.rendererLog} reading data from file '${path}' into the 'initial' property.`) : null;
+
+                    try {
+                        if (encrypt){
+                            this.getIv(fs);
+    
+                            const decipher = crypto.createDecipheriv("aes-256-cbc", crypto.createHash("sha512").update(this.options.passkey).digest
+                            ("base64").substr(0, 32), this.iv);
+                            this.initialFileData = Buffer.concat([decipher.update(this.initialFileData), decipher.final()]);
+                        }
+        
+                        if (minify){
+                            this.initialFileData = decode(this.initialFileData);
+                        } else {
+                            this.initialFileData = JSON.parse(this.initialFileData);
+                        }
+                    } catch (error) {
+                        console.error(`${this.rendererLog} encountered error '${error}' when trying to read file '${path}'. This file is probably corrupted, does not exist or is empty; defaulting file value to '{}'.`);
+
+                        this.initialFileData = {};
+                    }
+                } else {
+                    
+                    // If we get into this block, we must have had an error reading
+                    // the data file
+                    this.initialFileData = {};
+                }
+                this.initialFileDataParsed = true;
+
+                return this.initialFileData;
+            },
             send: (channel, key, value) => {
                 if (this.validSendChannels.includes(channel)) {
                     if (channel === readConfigRequest) {
@@ -146,33 +217,38 @@ export default class Store {
             path
         } = this.options;
 
-        const getIv = function(){
-            console.warn("getIv");
-            console.warn(this.iv);
-            if (typeof this.iv !== "undefined"){
-                return this.iv;
-            }
+        // WARNING - HARD RESET IV & DATA FILES
+        ipcMain.on(deleteConfigRequest, (IpcMainEvent, args) => {
+            debug ? console.log(`${this.mainLog} received a request to delete data files.`) : null;
 
-            let rawIv;
+            let success = true;
             try {
-
-                // Does file exist? Throws exception if does not exist
-                fs.accessSync(this.ivFile);
-                rawIv = fs.readFileSync(this.ivFile);
-            } catch (error) {
-                
-                console.warn("file doesn't exist");
-                // File does not exist, create file
-                let randomBytes = crypto.randomBytes(32).toString("hex").slice(0, 16);
-                rawIv = randomBytes;
-
-                fs.writeFileSync(this.ivFile, randomBytes);
+                fs.writeFileSync(path, "{}");
+                fs.writeFileSync(this.ivFile, generateIv());
+            } catch (error) {                
+                console.error(`${this.mainLog} failed to reset data due to error: '${error}'.`);
+                success = false;
             }
-            console.warn(rawIv);
-            console.warn(typeof rawIv);
 
-            this.iv = rawIv;
-        }.bind(this);
+            browserWindow.webContents.send(deleteConfigResponse, {
+                success
+            });
+        });
+
+        // When the renderer processes has updated the passkey.
+        // The main process has no access to the passkey, since
+        // it's intended that the passkey be passed in via the renderer
+        // process
+        ipcMain.on(savePasskeyRequest, (IpcMainEvent, args) => {
+            debug ? console.log(`${this.mainLog} received a request to update the passkey to '${args.passkey}'.`) : null;
+
+            this.options.passkey = args.passkey;
+
+            // Redundant, but may be helpful?
+            browserWindow.webContents.send(savePasskeyResponse, {
+                success: true
+            });
+        });
 
         // Anytime the renderer process requests for a file read
         ipcMain.on(readConfigRequest, (IpcMainEvent, args) => {
@@ -193,8 +269,9 @@ export default class Store {
                 let dataToRead = data;
 
                 if (encrypt){
-                    getIv();
-                    const decipher = crypto.createDecipheriv("aes-256-cbc", "abc", this.iv);
+                    this.getIv(fs);
+
+                    const decipher = crypto.createDecipheriv("aes-256-cbc", crypto.createHash("sha512").update(this.options.passkey).digest("base64").substr(0, 32), this.iv);
                     dataToRead = Buffer.concat([decipher.update(dataToRead), decipher.final()]);
                 }
 
@@ -203,7 +280,7 @@ export default class Store {
                 } else {
                     dataToRead = JSON.parse(dataToRead);
                 }                
-                this.filedata = dataToRead;
+                this.fileData = dataToRead;
 
                 debug ? console.log(`${this.mainLog} read the key '${args.key}' from file => '${dataToRead[args.key]}'.`) : null;
                 browserWindow.webContents.send(readConfigResponse, {
@@ -220,8 +297,8 @@ export default class Store {
             // Wrapper function; since we call
             // this twice below
             let writeToFile = function () {
-                this.filedata[args.key] = args.value;
-                let dataToWrite = this.filedata;
+                this.fileData[args.key] = args.value;
+                let dataToWrite = this.fileData;
 
                 if (minify){
                     dataToWrite = encode(dataToWrite);
@@ -230,8 +307,9 @@ export default class Store {
                 }
 
                 if (encrypt){
-                    getIv();
-                    const cipher = crypto.createCipheriv("aes-256-cbc", "abc", this.iv);
+                    this.getIv();
+
+                    const cipher = crypto.createCipheriv("aes-256-cbc", crypto.createHash("sha512").update(this.options.passkey).digest("base64").substr(0, 32), this.iv);
                     dataToWrite = Buffer.concat([cipher.update(dataToWrite), cipher.final()]);
                 }
 
@@ -247,35 +325,42 @@ export default class Store {
 
             // If we don't have any filedata saved yet,
             // let's pull out the latest data from file
-            if (typeof this.filedata === "undefined") {
+            if (typeof this.fileData === "undefined") {
                 fs.readFile(path, (error, data) => {
                     if (error){
                         console.error(`${this.mainLog} encountered error '${error}' when trying to read file '${path}'. This file is probably corrupted, does not exist or is empty; defaulting file value to '{}'.`);
 
-                        this.filedata = {};
+                        this.fileData = {};
                         writeToFile();
                         return;
                     }
 
-                    // Retreive file contents
-                    let dataInFile = {};
+                    // Retrieve file contents
+                    let dataInFile = data;
                     try {
                         if (typeof data !== "undefined") {
+                            if (encrypt){
+                                this.getIv(fs);
+            
+                                const decipher = crypto.createDecipheriv("aes-256-cbc", crypto.createHash("sha512").update(this.options.passkey).digest("base64").substr(0, 32), this.iv);
+                                dataInFile = Buffer.concat([decipher.update(dataInFile), decipher.final()]);
+                            }
+
                             if (minify){
-                                dataInFile = decode(data);
+                                dataInFile = decode(dataInFile);
                             } else {
-                                dataInFile = JSON.parse(data);
+                                dataInFile = JSON.parse(dataInFile);
                             }                            
                         }
                     } catch (error) {
                         console.error(`${this.mainLog} encountered error '${error}' when trying to read file '${path}'. This file is probably corrupted, does not exist or is empty; defaulting file value to '{}'.`);
                         
-                        this.filedata = {};
+                        this.fileData = {};
                         writeToFile();
                         return;
                     }
 
-                    this.filedata = dataInFile;
+                    this.fileData = dataInFile;
                     writeToFile();
                 });
             } else {

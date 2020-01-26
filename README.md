@@ -80,7 +80,7 @@ contextBridge.exposeInMainWorld(
 ```
 
 ### Use the store
-To retrieve the data of the store on app launch, you can access it via `window.api.store.initial`. 
+To retrieve the data of the store on app launch, you can access it via `window.api.store.initial()`. 
 
 Eg:
 ```jsx
@@ -91,7 +91,7 @@ class Main extends React.Component {
     super();
 
     this.state = {
-      message: typeof window.api.store.initial["myvalue"] !== "undefined" ? window.api.store.initial["myvalue"] : "Default value",
+      message: typeof window.api.store.initial()["myvalue"] !== "undefined" ? window.api.store.initial()["myvalue"] : "Default value",
     };
   }
 
