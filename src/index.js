@@ -1,15 +1,19 @@
-import { encode, decode } from "@msgpack/msgpack";
+import {
+    encode,
+    decode
+} from "@msgpack/msgpack";
 const crypto = require("crypto");
 const path = require("path");
 
 const defaultOptions = {
-    debug: true,
+    debug: false,
     minify: true,
     encrypt: true,
     passkey: "",
     path: "",
     filename: "data",
-    extension: ".json"
+    extension: ".json",
+    reset: false
 };
 
 // Electron-specific; must match mainIpc
@@ -19,11 +23,11 @@ export const readConfigResponse = "ReadConfig-Response";
 export const writeConfigResponse = "WriteConfig-Response";
 export const deleteConfigRequest = "DeleteConfig-Request";
 export const deleteConfigResponse = "DeleteConfig-Response";
-const savePasskeyRequest = "SavePasskey-Request";
-const savePasskeyResponse = "SavePasskey-Response";
+export const savePasskeyRequest = "SavePasskey-Request";
+export const savePasskeyResponse = "SavePasskey-Response";
 
 // Useful
-const generateIv = function(){
+const generateIv = function () {
     return crypto.randomBytes(32).toString("hex").slice(0, 16);
 }
 
@@ -33,11 +37,11 @@ export default class Store {
         this.fileData = undefined;
         this.initialFileData = undefined;
         this.initialFileDataParsed = false;
-        
+
         // encrypted-related variables
         this.iv = undefined;
         this.ivFile;
-        
+
         // log-related variables
         const logPrepend = "[secure-electron-store:";
         this.mainLog = `${logPrepend}main]=>`;
@@ -51,7 +55,7 @@ export default class Store {
         // Only run the following code in the renderer
         // process; we can determine if this is the renderer
         // process if we haven't set a new path from our options
-        if(typeof options === "undefined" || options.path !== defaultOptions.path){
+        if (typeof options === "undefined" || options.path !== defaultOptions.path) {
             try {
                 let arg = process.argv.filter(p => p.indexOf("storePath:") >= 0)[0];
                 this.options.path = arg.substr(arg.indexOf(":") + 1);
@@ -61,7 +65,7 @@ export default class Store {
                 throw `Could not find property 'additionalArguments' value beginning with 'storePath:' in your BrowserWindow. Please ensure this is set! Error: ${error}`;
             }
         }
-        
+
         this.ivFile = path.join(this.options.path, "iv.txt");
         this.options.path = path.join(this.options.path, `${this.options.filename}${this.options.extension}`);
         this.validSendChannels = [readConfigRequest, writeConfigRequest, savePasskeyRequest, deleteConfigRequest];
@@ -69,7 +73,7 @@ export default class Store {
 
         // Log that we finished initialization
         if (this.options.debug) {
-            if (typeof process === "object"){
+            if (typeof process === "object" && process.argv.filter(p => p.indexOf("electron") >= 0).length === 0) {
                 console.log(`${this.rendererLog} initialized store. Data file: '${this.options.path}'.`);
             } else {
                 console.log(`${this.mainLog} initialized store. Data file: '${this.options.path}'.`);
@@ -79,26 +83,25 @@ export default class Store {
 
     // Gets the IV value; or optionally creates
     // a new one if it does not already exist
-    getIv(fs){
-        if (typeof this.iv !== "undefined"){
+    getIv(fs) {
+        if (typeof this.iv !== "undefined") {
             return true;
         }
-    
+
         let rawIv;
         try {
-    
-            // Does file exist? Throws exception if does not exist
-            fs.accessSync(this.ivFile);
             rawIv = fs.readFileSync(this.ivFile);
         } catch (error) {
-            
-            // File does not exist, create file
-            let randomBytes = generateIv();
-            rawIv = randomBytes;
-    
-            fs.writeFileSync(this.ivFile, randomBytes);
+
+            // File does not exist; create it
+            if (error.code === "ENOENT") {
+                let randomBytes = generateIv();
+                rawIv = randomBytes;
+
+                fs.writeFileSync(this.ivFile, randomBytes);
+            }
         }
-    
+
         this.iv = rawIv;
     }
 
@@ -109,7 +112,7 @@ export default class Store {
             encrypt,
             path
         } = this.options;
-        
+
         // Initially read the file contents,
         // but do not decrypt/unminify until we
         // try to access it. This gives the user
@@ -118,7 +121,33 @@ export default class Store {
         try {
             this.initialFileData = fs.readFileSync(path);
         } catch (error) {
-            console.error(`${this.rendererLog} encountered error '${error}' when trying to read file '${path}'. This file is probably corrupted, does not exist or is empty; defaulting file value to '{}'.`);
+
+            // File does not exist, so let's create a file
+            // and give it an empty/default value
+            if (error.code === "ENOENT") {
+                let defaultData = {};
+
+                // We minify/ optional encrypt this default object here
+                // so that when we read the data later, everything works as expected
+                if (minify) {
+                    defaultData = encode(defaultData);
+                } else {
+                    defaultData = JSON.stringify(defaultData);
+                }
+
+                if (encrypt) {
+                    this.getIv(fs);
+
+                    const cipher = crypto.createCipheriv("aes-256-cbc", crypto.createHash("sha512").update(this.options.passkey).digest("base64").substr(0, 32), this.iv);
+                    defaultData = Buffer.concat([cipher.update(defaultData), cipher.final()]);
+                }
+
+                this.initialFileData = {};
+                this.initialFileDataParsed = true;
+                fs.writeFileSync(path, defaultData);
+            } else {
+                throw `${this.rendererLog} encountered error '${error}' when trying to read file '${path}'. This file is probably corrupted. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`;
+            }
         }
 
         return {
@@ -131,37 +160,27 @@ export default class Store {
                 });
             },
             initial: () => {
-                if (this.initialFileDataParsed){
+                if (this.initialFileDataParsed) {
                     return this.initialFileData;
                 }
 
-                if (typeof this.initialFileData !== "undefined"){
-                    debug ? console.log(`${this.rendererLog} reading data from file '${path}' into the 'initial' property.`) : null;
+                debug ? console.log(`${this.rendererLog} reading data from file '${path}' into the 'initial' property.`) : null;
 
-                    try {
-                        if (encrypt){
-                            this.getIv(fs);
-    
-                            const decipher = crypto.createDecipheriv("aes-256-cbc", crypto.createHash("sha512").update(this.options.passkey).digest
-                            ("base64").substr(0, 32), this.iv);
-                            this.initialFileData = Buffer.concat([decipher.update(this.initialFileData), decipher.final()]);
-                        }
-        
-                        if (minify){
-                            this.initialFileData = decode(this.initialFileData);
-                        } else {
-                            this.initialFileData = JSON.parse(this.initialFileData);
-                        }
-                    } catch (error) {
-                        console.error(`${this.rendererLog} encountered error '${error}' when trying to read file '${path}'. This file is probably corrupted, does not exist or is empty; defaulting file value to '{}'.`);
+                try {
+                    if (encrypt) {
+                        this.getIv(fs);
 
-                        this.initialFileData = {};
+                        const decipher = crypto.createDecipheriv("aes-256-cbc", crypto.createHash("sha512").update(this.options.passkey).digest("base64").substr(0, 32), this.iv);
+                        this.initialFileData = Buffer.concat([decipher.update(this.initialFileData), decipher.final()]);
                     }
-                } else {
-                    
-                    // If we get into this block, we must have had an error reading
-                    // the data file
-                    this.initialFileData = {};
+
+                    if (minify) {
+                        this.initialFileData = decode(this.initialFileData);
+                    } else {
+                        this.initialFileData = JSON.parse(this.initialFileData);
+                    }
+                } catch (error) {
+                    throw `${this.rendererLog} encountered error '${error}' when trying to read file '${path}'. This file is probably corrupted or has been tampered with. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`;
                 }
                 this.initialFileDataParsed = true;
 
@@ -169,19 +188,31 @@ export default class Store {
             },
             send: (channel, key, value) => {
                 if (this.validSendChannels.includes(channel)) {
-                    if (channel === readConfigRequest) {
-                        debug ? console.log(`${this.rendererLog} requesting to read key '${key}' from file.`) : null;
+                    switch (channel){
+                        case readConfigRequest:
+                            debug ? console.log(`${this.rendererLog} requesting to read key '${key}' from file.`) : null;
 
-                        ipcRenderer.send(channel, {
-                            key
-                        });
-                    } else if (channel === writeConfigRequest) {
-                        debug ? console.log(`${this.rendererLog} requesting to write key:value to file => "'${key}':'${value}'".`) : null;
+                            ipcRenderer.send(channel, {
+                                key
+                            });
+                        break;
+                        case writeConfigRequest:
+                            debug ? console.log(`${this.rendererLog} requesting to write key:value to file => "'${key}':'${value}'".`) : null;
 
-                        ipcRenderer.send(channel, {
-                            key,
-                            value
-                        });
+                            ipcRenderer.send(channel, {
+                                key,
+                                value
+                            });
+                        break;
+                        case savePasskeyRequest:
+                            debug ? console.log(`${this.rendererLog} requesting to save passkey '${key}' to file.`) : null;
+
+                            ipcRenderer.send(channel, {
+                                key,
+                            });
+                        break;
+                        default:
+                            break;
                     }
                 }
             },
@@ -197,6 +228,9 @@ export default class Store {
                                     break;
                                 case writeConfigResponse:
                                     console.log(`${this.rendererLog} ${!args.success ? "un-" : ""}successfully wrote key '${args.key}' to file.`);
+                                    break;
+                                case savePasskeyResponse:
+                                    console.log(`${this.rendererLog} ${!args.success ? "un-" : ""}successfully saved passkey.`);
                                     break;
                                 default:
                                     break;
@@ -214,19 +248,45 @@ export default class Store {
             minify,
             debug,
             encrypt,
-            path
+            path,
+            reset
         } = this.options;
 
-        // WARNING - HARD RESET IV & DATA FILES
+        // Clears and deletes each file; useful if the files have been tampered
+        // with or if the electron app wants a fresh config file
+        const resetFiles = function () {
+
+            // Possibly more secure(?), deleting contents in file before removal
+            fs.writeFileSync(path, "");
+            fs.writeFileSync(this.ivFile, "");
+
+            // Delete file
+            fs.unlinkSync(path);
+            fs.unlinkSync(this.ivFile);
+
+            // Reset cached file data
+            this.fileData = undefined;
+        }.bind(this);
+
+        if (reset) {
+            debug ? console.log(`${this.mainLog} resetting all files because property "reset" was set to true when configuring the store.`) : null;
+
+            try {
+                resetFiles();
+            } catch (error) {
+                throw `${this.mainLog} could not reset files, please resolve error '${error}' and try again.`;
+            }
+        }
+
+        // Deletes IV/data files if requested
         ipcMain.on(deleteConfigRequest, (IpcMainEvent, args) => {
             debug ? console.log(`${this.mainLog} received a request to delete data files.`) : null;
 
             let success = true;
             try {
-                fs.writeFileSync(path, "{}");
-                fs.writeFileSync(this.ivFile, generateIv());
-            } catch (error) {                
-                console.error(`${this.mainLog} failed to reset data due to error: '${error}'.`);
+                resetFiles();
+            } catch (error) {
+                console.error(`${this.mainLog} failed to reset data due to error: '${error}'. Please resolve this error and try again.`);
                 success = false;
             }
 
@@ -255,37 +315,68 @@ export default class Store {
             debug ? console.log(`${this.mainLog} received a request to read from the key '${args.key}' from the given file '${path}'.`) : null;
 
             fs.readFile(path, (error, data) => {
-                if (error){
-                    console.error(`${this.mainLog} encountered error '${error}' when trying to read key '${args.key}' from file '${path}'. This file is probably corrupted or the key does not exist.`);
 
-                    browserWindow.webContents.send(readConfigResponse, {
-                        success: false,
-                        key,
-                        value: undefined
-                    });
-                    return;
+                if (error) {
+
+                    // File does not exist, so let's create a file
+                    // and give it an empty/default value
+                    if (error.code === "ENOENT") {
+                        debug ? console.log(`${this.mainLog} did not find data file when trying read the key '${args.key}'. Creating an empty data file.`) : null;
+
+                        let defaultData = {};
+
+                        // We minify/ optional encrypt this default object here
+                        // so that when we read the data later, everything works as expected
+                        if (minify) {
+                            defaultData = decode(defaultData);
+                        } else {
+                            defaultData = JSON.parse(defaultData);
+                        }
+
+                        if (encrypt) {
+                            this.getIv(fs);
+
+                            const cipher = crypto.createCipheriv("aes-256-cbc", crypto.createHash("sha512").update(this.options.passkey).digest("base64").substr(0, 32), this.iv);
+                            defaultData = Buffer.concat([cipher.update(defaultData), cipher.final()]);
+                        }
+
+                        fs.writeFileSync(path, defaultData);
+                        browserWindow.webContents.send(readConfigResponse, {
+                            success: false,
+                            key: args.key,
+                            value: undefined
+                        });
+                        return;
+                    } else {
+                        throw `${this.mainLog} encountered error '${error}' when trying to read file '${path}'. This file is probably corrupted. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`;
+                    }
                 }
 
                 let dataToRead = data;
 
-                if (encrypt){
-                    this.getIv(fs);
+                try {
+                    if (encrypt) {
+                        this.getIv(fs);
 
-                    const decipher = crypto.createDecipheriv("aes-256-cbc", crypto.createHash("sha512").update(this.options.passkey).digest("base64").substr(0, 32), this.iv);
-                    dataToRead = Buffer.concat([decipher.update(dataToRead), decipher.final()]);
+                        const decipher = crypto.createDecipheriv("aes-256-cbc", crypto.createHash("sha512").update(this.options.passkey).digest("base64").substr(0, 32), this.iv);
+                        dataToRead = Buffer.concat([decipher.update(dataToRead), decipher.final()]);
+                    }
+
+                    if (minify) {
+                        dataToRead = decode(dataToRead);
+                    } else {
+                        dataToRead = JSON.parse(dataToRead);
+                    }
+                } catch (error) {
+                    throw `${this.mainLog} encountered error '${error}' when trying to read file '${path}'. This file is probably corrupted or has been tampered with. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`;
                 }
 
-                if (minify){
-                    dataToRead = decode(dataToRead);
-                } else {
-                    dataToRead = JSON.parse(dataToRead);
-                }                
                 this.fileData = dataToRead;
 
                 debug ? console.log(`${this.mainLog} read the key '${args.key}' from file => '${dataToRead[args.key]}'.`) : null;
                 browserWindow.webContents.send(readConfigResponse, {
                     success: true,
-                    key,
+                    key: args.key,
                     value: dataToRead[args.key]
                 });
             });
@@ -297,20 +388,27 @@ export default class Store {
             // Wrapper function; since we call
             // this twice below
             let writeToFile = function () {
-                this.fileData[args.key] = args.value;
-                let dataToWrite = this.fileData;
-
-                if (minify){
-                    dataToWrite = encode(dataToWrite);
-                } else {
-                    dataToWrite = JSON.stringify(dataToWrite);
+                if (typeof args.key !== "undefined" && typeof args.value !== "undefined") {
+                    this.fileData[args.key] = args.value;
                 }
 
-                if (encrypt){
-                    this.getIv();
+                let dataToWrite = this.fileData;
 
-                    const cipher = crypto.createCipheriv("aes-256-cbc", crypto.createHash("sha512").update(this.options.passkey).digest("base64").substr(0, 32), this.iv);
-                    dataToWrite = Buffer.concat([cipher.update(dataToWrite), cipher.final()]);
+                try {
+                    if (minify) {
+                        dataToWrite = encode(dataToWrite);
+                    } else {
+                        dataToWrite = JSON.stringify(dataToWrite);
+                    }
+
+                    if (encrypt) {
+                        this.getIv();
+
+                        const cipher = crypto.createCipheriv("aes-256-cbc", crypto.createHash("sha512").update(this.options.passkey).digest("base64").substr(0, 32), this.iv);
+                        dataToWrite = Buffer.concat([cipher.update(dataToWrite), cipher.final()]);
+                    }
+                } catch (error) {
+                    throw `${this.mainLog} encountered error '${error}' when trying to write file '${path}'.`;
                 }
 
                 fs.writeFile(path, dataToWrite, (error) => {
@@ -327,37 +425,40 @@ export default class Store {
             // let's pull out the latest data from file
             if (typeof this.fileData === "undefined") {
                 fs.readFile(path, (error, data) => {
-                    if (error){
-                        console.error(`${this.mainLog} encountered error '${error}' when trying to read file '${path}'. This file is probably corrupted, does not exist or is empty; defaulting file value to '{}'.`);
 
-                        this.fileData = {};
-                        writeToFile();
-                        return;
+                    if (error) {
+
+                        // File does not exist, so let's create a file
+                        // and give it an empty/default value
+                        if (error.code === "ENOENT") {
+                            this.fileData = {};
+
+                            writeToFile();
+                            return;
+                        } else {
+                            throw `${this.mainLog} encountered error '${error}' when trying to read file '${path}'. This file is probably corrupted. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`;
+                        }
                     }
 
                     // Retrieve file contents
                     let dataInFile = data;
                     try {
                         if (typeof data !== "undefined") {
-                            if (encrypt){
+                            if (encrypt) {
                                 this.getIv(fs);
-            
+
                                 const decipher = crypto.createDecipheriv("aes-256-cbc", crypto.createHash("sha512").update(this.options.passkey).digest("base64").substr(0, 32), this.iv);
                                 dataInFile = Buffer.concat([decipher.update(dataInFile), decipher.final()]);
                             }
 
-                            if (minify){
+                            if (minify) {
                                 dataInFile = decode(dataInFile);
                             } else {
                                 dataInFile = JSON.parse(dataInFile);
-                            }                            
+                            }
                         }
                     } catch (error) {
-                        console.error(`${this.mainLog} encountered error '${error}' when trying to read file '${path}'. This file is probably corrupted, does not exist or is empty; defaulting file value to '{}'.`);
-                        
-                        this.fileData = {};
-                        writeToFile();
-                        return;
+                        throw `${this.mainLog} encountered error '${error}' when trying to read file '${path}'. This file is probably corrupted. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`;
                     }
 
                     this.fileData = dataInFile;
