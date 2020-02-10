@@ -97,9 +97,12 @@ export default class Store {
             if (error.code === "ENOENT") {
                 let randomBytes = generateIv();
                 rawIv = randomBytes;
-
-                fs.writeFileSync(this.ivFile, randomBytes);
+            } else {
+                // Handle better!
+                console.error(error);
             }
+
+            fs.writeFileSync(this.ivFile, randomBytes);
         }
 
         this.iv = rawIv;
@@ -246,7 +249,7 @@ export default class Store {
                         }
 
                         // Need to reset iv if we successfully delete files
-                        if (channel === deleteConfigResponse && args.success){
+                        if (channel === deleteConfigResponse && args.success) {
                             this.iv = undefined;
                         }
 
@@ -271,14 +274,17 @@ export default class Store {
         const resetFiles = function () {
 
             // Possibly more secure(?), deleting contents in file before removal
+            debug ? console.log(`${this.mainLog} clearing data files.`) : null;
             fs.writeFileSync(path, "");
             fs.writeFileSync(this.ivFile, "");
 
             // Delete file
+            debug ? console.log(`${this.mainLog} unlinking data files.`) : null;
             fs.unlinkSync(path);
             fs.unlinkSync(this.ivFile);
 
             // Reset cached file data
+            debug ? console.log(`${this.mainLog} clearing local variables.`) : null;
             this.iv = undefined;
             this.fileData = undefined;
         }.bind(this);
@@ -417,7 +423,7 @@ export default class Store {
                     }
 
                     if (encrypt) {
-                        this.getIv();
+                        this.getIv(fs);
 
                         const cipher = crypto.createCipheriv("aes-256-cbc", crypto.createHash("sha512").update(this.options.passkey).digest("base64").substr(0, 32), this.iv);
                         dataToWrite = Buffer.concat([cipher.update(dataToWrite), cipher.final()]);
