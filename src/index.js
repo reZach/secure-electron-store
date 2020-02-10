@@ -244,6 +244,12 @@ export default class Store {
                                     break;
                             }
                         }
+
+                        // Need to reset iv if we successfully delete files
+                        if (channel === deleteConfigResponse && args.success){
+                            this.iv = undefined;
+                        }
+
                         func(args);
                     });
                 }
@@ -273,6 +279,7 @@ export default class Store {
             fs.unlinkSync(this.ivFile);
 
             // Reset cached file data
+            this.iv = undefined;
             this.fileData = undefined;
         }.bind(this);
 
