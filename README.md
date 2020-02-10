@@ -89,7 +89,9 @@ import { readConfigRequest, readConfigResponse } from "secure-electron-store";
 // ...
 
 window.api.store.onReceive(readConfigResponse, function(args){
-    console.log(`Received '${args.key}:${args.value}' from file.`);
+    if (args.success){
+         console.log(`Received '${args.key}:${args.value}' from file.`);
+    }    
 });
 window.api.store.send(readConfigRequest, "myvalue");
 ```
@@ -170,6 +172,21 @@ class Main extends React.Component {
     </div>
   }
 }
+```
+
+### Deleting the store
+If you'd like to delete the store, you can send the `deleteConfigRequest` request.
+```javascript
+import { deleteConfigRequest, deleteConfigResponse } from "secure-electron-store";
+
+// ...
+
+window.api.store.onReceive(deleteConfigResponse, function(args){
+    if (args.success){
+      console.log("File deleted");
+    }
+});
+window.api.store.send(deleteConfigRequest);
 ```
 
 ## Configuring options

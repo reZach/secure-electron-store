@@ -188,14 +188,14 @@ export default class Store {
             },
             send: (channel, key, value) => {
                 if (this.validSendChannels.includes(channel)) {
-                    switch (channel){
+                    switch (channel) {
                         case readConfigRequest:
                             debug ? console.log(`${this.rendererLog} requesting to read key '${key}' from file.`) : null;
 
                             ipcRenderer.send(channel, {
                                 key
                             });
-                        break;
+                            break;
                         case writeConfigRequest:
                             debug ? console.log(`${this.rendererLog} requesting to write key:value to file => "'${key}':'${value}'".`) : null;
 
@@ -203,14 +203,19 @@ export default class Store {
                                 key,
                                 value
                             });
-                        break;
+                            break;
                         case savePasskeyRequest:
                             debug ? console.log(`${this.rendererLog} requesting to save passkey '${key}' to file.`) : null;
 
                             ipcRenderer.send(channel, {
                                 key,
                             });
-                        break;
+                            break;
+                        case deleteConfigRequest:
+                            debug ? console.log(`${this.rendererLog} requesting to delete file.`) : null;
+
+                            ipcRenderer.send(channel, {});
+                            break;
                         default:
                             break;
                     }
@@ -231,6 +236,9 @@ export default class Store {
                                     break;
                                 case savePasskeyResponse:
                                     console.log(`${this.rendererLog} ${!args.success ? "un-" : ""}successfully saved passkey.`);
+                                    break;
+                                case deleteConfigResponse:
+                                    console.log(`${this.rendererLog} ${!args.success ? "un-" : ""}successfully deleted file.`);
                                     break;
                                 default:
                                     break;
