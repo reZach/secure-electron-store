@@ -92,14 +92,14 @@ export default class Store {
         try {
             rawIv = fs.readFileSync(this.ivFile);
         } catch (error) {
-
+            
+            let randomBytes = generateIv();
+            rawIv = randomBytes;
             // File does not exist; create it
-            if (error.code === "ENOENT") {
-                let randomBytes = generateIv();
-                rawIv = randomBytes;
-            } else {
+            if (error.code !== "ENOENT") {
+                
                 // Handle better!
-                console.error(error);
+                debug ? console.warn(error) : null;
             }
 
             fs.writeFileSync(this.ivFile, randomBytes);

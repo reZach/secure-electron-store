@@ -1,6 +1,6 @@
 {
   "name": "secure-electron-store",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "A secure electron-store that uses ipcMain/ipcRenderer.",
   "main": "lib/index.js",
   "scripts": {
