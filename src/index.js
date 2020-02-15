@@ -92,12 +92,12 @@ export default class Store {
         try {
             rawIv = fs.readFileSync(this.ivFile);
         } catch (error) {
-            
+
             let randomBytes = generateIv();
             rawIv = randomBytes;
             // File does not exist; create it
             if (error.code !== "ENOENT") {
-                
+
                 // Handle better!
                 debug ? console.warn(error) : null;
             }
@@ -255,6 +255,14 @@ export default class Store {
 
                         func(args);
                     });
+                }
+            },
+            clearRendererBindings: () => {
+                // Clears all listeners
+                debug ? console.log(`${this.rendererLog} clearing all ipcRenderer listeners.`) : null;
+
+                for (var i = 0; i < this.validReceiveChannels.length; i++) {
+                    ipcRenderer.removeAllListeners(this.validReceiveChannels[i]);
                 }
             }
         };
@@ -490,4 +498,13 @@ export default class Store {
             }
         });
     };
+
+    // Clears ipcMain bindings;
+    // mainly intended to be used within Mac-OS
+    clearMainBindings(ipcMain) {        
+        ipcMain.removeAllListeners(readConfigRequest);
+        ipcMain.removeAllListeners(writeConfigRequest);
+        ipcMain.removeAllListeners(deleteConfigRequest);
+        ipcMain.removeAllListeners(savePasskeyRequest);
+    }
 }

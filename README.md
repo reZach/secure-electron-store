@@ -55,6 +55,16 @@ async function createWindow() {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.on("ready", createWindow);
+
+app.on("window-all-closed", () => {
+  // On macOS it is common for applications and their menu bar
+  // to stay active until the user quits explicitly with Cmd + Q
+  if (process.platform !== "darwin") {
+    app.quit();
+  } else {
+    store.clearMainBindings(ipcMain);
+  }
+});
 ```
 
 ### Modify your preload.js file
@@ -123,6 +133,39 @@ class Main extends React.Component {
   //...
 }
 ```
+
+### Setting up your bindings
+Since this store uses [ipcRenderer]() internally, we recommend setting up your bindings in your [componentDidMount](https://reactjs.org/docs/react-component.html#componentdidmount) method if you are using secure-electron-store in a react app. 
+
+> Even _if_ you aren't using an react app, it's important to clear your subscriptions (see note below code sample).
+```jsx
+import React from "react";
+import { readConfigRequest, readConfigResponse } from "secure-electron-store";
+
+class MyComponent extends React.Component {
+  constructor(){
+    super();
+
+    // your initialization of functions/etc.
+  }
+
+  componentDidMount() {
+    // Clears all listeners
+    window.api.store.clearRendererBindings();
+
+    window.api.store.onReceive(readConfigResponse, function(args) {
+      if (args.success) {
+        // Do something with the value from file
+      }
+    });
+
+    // Read from file as soon as this component is rendered
+    window.api.store.send(readConfigRequest, "store");
+  }
+}
+```
+
+> _NOTE_: It's important to remember to `clearRendererBindings()`. Doing so will remove all subscriptions your store has already created. If you do not do this, you may end up where multiple bindings are being called for a single read/write event. (This _may_ be your intention, but if it is I assume you are smart enough to know what you are doing).
 
 ### Using the passkey
 Due to being able to configure the store with a passkey (see options below for more details), before you ever access `window.api.store.initial()`, or the read or write methods, you'll need to set the passkey (or else encryption will fail)! This is only required if your passkey has a value (by default the passkey has a value of `""` which doesn't require any additional code shown below). Here is a sample of how you might do that.
