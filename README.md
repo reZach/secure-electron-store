@@ -233,9 +233,6 @@ class MyComponent extends React.Component {
   }
 
   componentDidMount() {
-    // Clears all listeners
-    window.api.store.clearRendererBindings();
-
     // Request so that the main process can use the store
     window.api.store.send(useConfigInMainRequest);
 
