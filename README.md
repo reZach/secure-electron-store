@@ -217,6 +217,100 @@ class Main extends React.Component {
 }
 ```
 
+### Using the store from the main process
+You can use the store from the main process by sending a request from the renderer process. Once this request is received by the main electron process, the main electron process will be able to use values in your store (to modify your [BrowserWindow](https://www.electronjs.org/docs/api/browser-window) for example).
+
+> _NOTE_: It's important to remember that if your store is protected by a passkey, you'll need to first send the `savePasskeyRequest` message (shown above) before you send the `useConfigInMainRequest` message.
+```jsx
+import React from "react";
+import { useConfigInMainRequest, useConfigInMainResponse } from "secure-electron-store";
+
+class MyComponent extends React.Component {
+  constructor(){
+    super();
+
+    // your initialization of functions/etc.
+  }
+
+  componentDidMount() {
+    // Clears all listeners
+    window.api.store.clearRendererBindings();
+
+    // Request so that the main process can use the store
+    window.api.store.send(useConfigInMainRequest);
+
+    // Act on a successful message
+    window.api.store.onReceive(useConfigInMainResponse, function(args) {
+      if (args.success){
+        console.log("Successfully used store in electron main process");
+      }
+    });
+  }
+}
+```
+
+Your main electron process will look something like this. This code looks similar to the main bindings as shown above but with a few modifications.
+```javascript
+const {
+  app,
+  BrowserWindow,
+  ipcMain,
+  ...
+} = require("electron");
+const Store = require("secure-electron-store").default;
+const fs = require("fs");
+
+// Keep a global reference of the window object, if you don't, the window will
+// be closed automatically when the JavaScript object is garbage collected.
+let win;
+
+async function createWindow() {
+
+  // Create the browser window.
+  win = new BrowserWindow({
+    width: 800,
+    height: 600,
+    webPreferences: {
+      contextIsolation: true,
+      additionalArguments: [`storePath:${app.getPath("userData")}`], // important!
+      preload: path.join(__dirname, "preload.js") // a preload script is necessary!
+    }
+  });
+
+  // Sets up main.js bindings for our electron store;
+  // callback is optional and allows you to use store in main process
+  const callback = function(success, store){
+    console.log(`${!success ? "Un-s" : "S"}uccessfully retrieved store in main process.`);
+    console.log(store); // {"key1": "value1", ... }
+    
+    win.maximize(); // modify BrowserWindow, for example
+  };
+
+  const store = new Store({
+    path: app.getPath("userData")
+  });
+  store.mainBindings(ipcMain, win, fs, callback); // "callback" was added as the last parameter here!
+
+  // Load app
+  win.loadFile("path_to_my_html_file");
+}
+
+// This method will be called when Electron has finished
+// initialization and is ready to create browser windows.
+// Some APIs can only be used after this event occurs.
+app.on("ready", createWindow);
+
+app.on("window-all-closed", () => {
+  // On macOS it is common for applications and their menu bar
+  // to stay active until the user quits explicitly with Cmd + Q
+  if (process.platform !== "darwin") {
+    app.quit();
+  } else {
+    store.clearMainBindings(ipcMain);
+  }
+});
+```
+
 ### Deleting the store
 If you'd like to delete the store, you can send the `deleteConfigRequest` request.
 ```javascript

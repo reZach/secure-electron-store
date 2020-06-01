@@ -25,6 +25,8 @@ export const deleteConfigRequest = "DeleteConfig-Request";
 export const deleteConfigResponse = "DeleteConfig-Response";
 export const savePasskeyRequest = "SavePasskey-Request";
 export const savePasskeyResponse = "SavePasskey-Response";
+export const useConfigInMainRequest = "UseConfigInMain-Request";
+export const useConfigInMainResponse = "UseConfigInMain-Response";
 
 // Useful
 const generateIv = function () {
@@ -68,8 +70,8 @@ export default class Store {
 
         this.ivFile = path.join(this.options.path, "iv.txt");
         this.options.path = path.join(this.options.path, `${this.options.filename}${this.options.extension}`);
-        this.validSendChannels = [readConfigRequest, writeConfigRequest, savePasskeyRequest, deleteConfigRequest];
-        this.validReceiveChannels = [readConfigResponse, writeConfigResponse, savePasskeyResponse, deleteConfigResponse];
+        this.validSendChannels = [readConfigRequest, writeConfigRequest, savePasskeyRequest, deleteConfigRequest, useConfigInMainRequest];
+        this.validReceiveChannels = [readConfigResponse, writeConfigResponse, savePasskeyResponse, deleteConfigResponse, useConfigInMainResponse];
 
         // Log that we finished initialization
         if (this.options.debug) {
@@ -219,6 +221,11 @@ export default class Store {
 
                             ipcRenderer.send(channel, {});
                             break;
+                        case useConfigInMainRequest:
+                            debug ? console.log(`${this.rendererLog} requesting to use store in electron main process.`) : null;
+
+                            ipcRenderer.send(channel, {});
+                            break;
                         default:
                             break;
                     }
@@ -242,6 +249,9 @@ export default class Store {
                                     break;
                                 case deleteConfigResponse:
                                     console.log(`${this.rendererLog} ${!args.success ? "un-" : ""}successfully deleted file.`);
+                                    break;
+                                case useConfigInMainResponse:
+                                    console.log(`${this.rendererLog} ${!args.success ? "un-" : ""}successfully read store in electron main process.`);
                                     break;
                                 default:
                                     break;
@@ -268,7 +278,7 @@ export default class Store {
         };
     }
 
-    mainBindings(ipcMain, browserWindow, fs) {
+    mainBindings(ipcMain, browserWindow, fs, mainProcessCallback = undefined) {
         const {
             minify,
             debug,
@@ -497,14 +507,79 @@ export default class Store {
                 writeToFile();
             }
         });
+
+        // Anytime the main process needs to use the store        
+        ipcMain.on(useConfigInMainRequest, (IpcMainEvent, args) => {
+            debug ? console.log(`${this.mainLog} received a request to read store in electron main process.`) : null;
+
+            // If user would like to use store values in main electron process,
+            // the user can request that a callback be ran in the main electron process
+            // when the "useConfigInMainRequest" request is received
+
+            // Be sure your "mainProcessCallback" function is defined as "const"
+            // in your main process, otherwise the reference will be GC'd and
+            // this callback will never happen
+            if (typeof mainProcessCallback !== "undefined") {
+
+                let dataInFile = {};
+                fs.readFile(path, (error, data) => {
+
+                    if (error) {
+
+                        // File does not exist, so let's create a file
+                        // and give it an empty/default value
+                        if (error.code === "ENOENT") {
+                            debug ? console.log(`${this.mainLog} did not find data file when trying read the data file from the main electron process.`) : null;
+
+                            mainProcessCallback(false, dataInFile);
+
+                            browserWindow.webContents.send(useConfigInMainResponse, {
+                                success: false
+                            });
+                            return;
+                        }
+                    }
+
+                    dataInFile = data;
+
+                    try {
+                        if (encrypt) {
+                            this.getIv(fs);
+
+                            const decipher = crypto.createDecipheriv("aes-256-cbc", crypto.createHash("sha512").update(this.options.passkey).digest("base64").substr(0, 32), this.iv);
+                            dataInFile = Buffer.concat([decipher.update(dataInFile), decipher.final()]);
+                        }
+
+                        if (minify) {
+                            dataInFile = decode(dataInFile);
+                        } else {
+                            dataInFile = JSON.parse(dataInFile);
+                        }
+                    } catch (error) {
+                        throw `${this.mainLog} encountered error '${error}' when trying to read file '${path}'. This file is probably corrupted or has been tampered with. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`;
+                    }
+
+                    debug ? console.log(`${this.mainLog} read the store from the electron main process successfully.`) : null;
+
+                    mainProcessCallback(true, dataInFile);
+                    browserWindow.webContents.send(useConfigInMainResponse, {
+                        success: true
+                    });
+                    return;
+                });
+            } else {
+                throw `${this.mainLog} failed to take action when receiving a request to use the store in the main electron process. This has occurred because your callback is undefined, please ensure your callback is "const" so it is not garbage collected - this is the most likely reason for your error`;
+            }
+        });
     };
 
     // Clears ipcMain bindings;
     // mainly intended to be used within Mac-OS
-    clearMainBindings(ipcMain) {        
+    clearMainBindings(ipcMain) {
         ipcMain.removeAllListeners(readConfigRequest);
         ipcMain.removeAllListeners(writeConfigRequest);
         ipcMain.removeAllListeners(deleteConfigRequest);
         ipcMain.removeAllListeners(savePasskeyRequest);
+        ipcMain.removeAllListeners(useConfigInMainRequest);
     }
 }
