@@ -1,9 +1,13 @@
 import {
-    encode,
-    decode
+    Encoder,
+    Decoder
 } from "@msgpack/msgpack";
 const crypto = require("crypto");
 const path = require("path");
+
+// Faster than using 'encode' or 'decode' from @msgpack/msgpack
+const encoder = new Encoder();
+const decoder = new Decoder();
 
 const defaultOptions = {
     debug: false,
@@ -11,22 +15,32 @@ const defaultOptions = {
     encrypt: true,
     passkey: "",
     path: "",
+    unprotectedPath: "",
     filename: "data",
+    unprotectedFilename: "unprotected",
     extension: ".json",
     reset: false
 };
 
 // Electron-specific; must match mainIpc
 export const readConfigRequest = "ReadConfig-Request";
-export const writeConfigRequest = "WriteConfig-Request";
 export const readConfigResponse = "ReadConfig-Response";
+export const readUnprotectedConfigRequest = "ReadUnprotectedConfig-Request";
+export const readUnprotectedConfigResponse = "ReadUnprotectedConfig-Response";
+export const writeConfigRequest = "WriteConfig-Request";
 export const writeConfigResponse = "WriteConfig-Response";
+export const writeUnprotectedConfigRequest = "WriteUnprotectedConfig-Request";
+export const writeUnprotectedConfigResponse = "WriteUnprotectedConfig-Response";
 export const deleteConfigRequest = "DeleteConfig-Request";
 export const deleteConfigResponse = "DeleteConfig-Response";
+export const deleteUnprotectedConfigRequest = "DeleteUnprotectedConfig-Request";
+export const deleteUnprotectedConfigResponse = "DeleteUnprotectedConfig-Response";
 export const savePasskeyRequest = "SavePasskey-Request";
 export const savePasskeyResponse = "SavePasskey-Response";
 export const useConfigInMainRequest = "UseConfigInMain-Request";
 export const useConfigInMainResponse = "UseConfigInMain-Response";
+export const useUnprotectedConfigInMainRequest = "UseUnprotectedConfigInMain-Request";
+export const useUnprotectedConfigInMainResponse = "UseUnprotectedConfigInMain-Response";
 
 // Useful
 const generateIv = function () {
@@ -39,10 +53,12 @@ export default class Store {
         this.fileData = undefined;
         this.initialFileData = undefined;
         this.initialFileDataParsed = false;
+        this.unprotectedFileData = undefined;
+        this.initialUnprotectedFileData = undefined;
+        this.initialUnprotectedFileDataParsed = false;
 
         // encrypted-related variables
         this.iv = undefined;
-        this.ivFile;
 
         // log-related variables
         const logPrepend = "[secure-electron-store:";
@@ -59,7 +75,7 @@ export default class Store {
         // process if we haven't set a new path from our options
         if (typeof options === "undefined" || options.path !== defaultOptions.path) {
             try {
-                let arg = process.argv.filter(p => p.indexOf("storePath:") >= 0)[0];
+                const arg = process.argv.filter(p => p.indexOf("storePath:") >= 0)[0];
                 this.options.path = arg.substr(arg.indexOf(":") + 1);
 
                 if (this.options.debug) console.log(`${this.rendererLog} initializing. Parsed 'storePath' value: '${this.options.path}'.`);
@@ -68,10 +84,12 @@ export default class Store {
             }
         }
 
-        this.ivFile = path.join(this.options.path, "iv.txt");
-        this.options.path = path.join(this.options.path, `${this.options.filename}${this.options.extension}`);
-        this.validSendChannels = [readConfigRequest, writeConfigRequest, savePasskeyRequest, deleteConfigRequest, useConfigInMainRequest];
-        this.validReceiveChannels = [readConfigResponse, writeConfigResponse, savePasskeyResponse, deleteConfigResponse, useConfigInMainResponse];
+        const rootPath = this.options.path;
+        this.ivFile = path.join(rootPath, "iv.txt");
+        this.options.path = path.join(rootPath, `${this.options.filename}${this.options.extension}`);
+        this.options.unprotectedPath = path.join(this.options.unprotectedPath.length === 0 ? rootPath : this.options.unprotectedPath, `${this.options.unprotectedFilename}${this.options.extension}`);
+        this.validSendChannels = [readConfigRequest, readUnprotectedConfigRequest, writeConfigRequest, writeUnprotectedConfigRequest, savePasskeyRequest, deleteConfigRequest, deleteUnprotectedConfigRequest, useConfigInMainRequest, useUnprotectedConfigInMainRequest];
+        this.validReceiveChannels = [readConfigResponse, readUnprotectedConfigResponse, writeConfigResponse, writeUnprotectedConfigResponse, savePasskeyResponse, deleteConfigResponse, deleteUnprotectedConfigResponse, useConfigInMainResponse, useUnprotectedConfigInMainResponse];
 
         // Log that we finished initialization
         if (this.options.debug) {
@@ -95,13 +113,15 @@ export default class Store {
             rawIv = fs.readFileSync(this.ivFile);
         } catch (error) {
 
-            let randomBytes = generateIv();
+            const randomBytes = generateIv();
             rawIv = randomBytes;
             // File does not exist; create it
             if (error.code !== "ENOENT") {
 
                 // Handle better!
-                debug ? console.warn(error) : null;
+                if (debug) {
+                    console.warn(error);
+                }
             }
 
             fs.writeFileSync(this.ivFile, randomBytes);
@@ -115,7 +135,8 @@ export default class Store {
             minify,
             debug,
             encrypt,
-            path
+            path,
+            unprotectedPath
         } = this.options;
 
         // Initially read the file contents,
@@ -135,7 +156,7 @@ export default class Store {
                 // We minify/ optional encrypt this default object here
                 // so that when we read the data later, everything works as expected
                 if (minify) {
-                    defaultData = encode(defaultData);
+                    defaultData = encoder.encode(defaultData);
                 } else {
                     defaultData = JSON.stringify(defaultData);
                 }
@@ -155,8 +176,36 @@ export default class Store {
             }
         }
 
+        // Do the same for the unprotected file, sans
+        // any unencryption
+        try {
+            this.initialUnprotectedFileData = fs.readFileSync(unprotectedPath);
+        } catch (error) {
+
+            // File does not exist, so let's create a file
+            // and give it an empty/default value
+            if (error.code === "ENOENT") {
+                let defaultData = {};
+
+                // We minify/ optional encrypt this default object here
+                // so that when we read the data later, everything works as expected
+                if (minify) {
+                    defaultData = encoder.encode(defaultData);
+                } else {
+                    defaultData = JSON.stringify(defaultData);
+                }
+
+                this.initialUnprotectedFileData = {};
+                this.initialUnprotectedFileDataParsed = true;
+                fs.writeFileSync(unprotectedPath, defaultData);
+            } else {
+                throw `${this.rendererLog} encountered error '${error}' when trying to read file '${unprotectedPath}'. This file is probably corrupted. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`;
+            }
+        }
+
         return {
             path,
+            unprotectedPath,
             setPasskey: (passkey) => {
                 this.options.passkey = passkey;
 
@@ -169,7 +218,9 @@ export default class Store {
                     return this.initialFileData;
                 }
 
-                debug ? console.log(`${this.rendererLog} reading data from file '${path}' into the 'initial' property.`) : null;
+                if (debug) {
+                    console.log(`${this.rendererLog} reading data from file '${path}' into the 'initial' property.`);
+                }
 
                 try {
                     if (encrypt) {
@@ -180,7 +231,7 @@ export default class Store {
                     }
 
                     if (minify) {
-                        this.initialFileData = decode(this.initialFileData);
+                        this.initialFileData = decoder.decode(this.initialFileData);
                     } else {
                         this.initialFileData = JSON.parse(this.initialFileData);
                     }
@@ -191,18 +242,44 @@ export default class Store {
 
                 return this.initialFileData;
             },
+            initialUnprotected: () => {
+                if (this.initialUnprotectedFileDataParsed) {
+                    return this.initialUnprotectedFileData;
+                }
+
+                if (debug) {
+                    console.log(`${this.rendererLog} reading data from file '${unprotectedPath}' into the 'initial' property.`);
+                }
+
+                try {
+                    if (minify) {
+                        this.initialUnprotectedFileData = decoder.decode(this.initialUnprotectedFileData);
+                    } else {
+                        this.initialUnprotectedFileData = JSON.parse(this.initialUnprotectedFileData);
+                    }
+                } catch (error) {
+                    throw `${this.rendererLog} encountered error '${error}' when trying to read file '${unprotectedPath}'. This file is probably corrupted or has been tampered with. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`;
+                }
+                this.initialUnprotectedFileDataParsed = true;
+
+                return this.initialUnprotectedFileData;
+            },
             send: (channel, key, value) => {
                 if (this.validSendChannels.includes(channel)) {
                     switch (channel) {
                         case readConfigRequest:
-                            debug ? console.log(`${this.rendererLog} requesting to read key '${key}' from file.`) : null;
+                            if (debug) {
+                                console.log(`${this.rendererLog} requesting to read key '${key}' from file.`);
+                            }
 
                             ipcRenderer.send(channel, {
                                 key
                             });
                             break;
                         case writeConfigRequest:
-                            debug ? console.log(`${this.rendererLog} requesting to write key:value to file => "'${key}':'${value}'".`) : null;
+                            if (debug) {
+                                console.log(`${this.rendererLog} requesting to write key:value to file => "'${key}':'${value}'".`);
+                            }
 
                             ipcRenderer.send(channel, {
                                 key,
@@ -210,19 +287,58 @@ export default class Store {
                             });
                             break;
                         case savePasskeyRequest:
-                            debug ? console.log(`${this.rendererLog} requesting to save passkey '${key}' to file.`) : null;
+                            if (debug) {
+                                console.log(`${this.rendererLog} requesting to save passkey '${key}' to file.`);
+                            }
 
                             ipcRenderer.send(channel, {
                                 key,
                             });
                             break;
                         case deleteConfigRequest:
-                            debug ? console.log(`${this.rendererLog} requesting to delete file.`) : null;
+                            if (debug) {
+                                console.log(`${this.rendererLog} requesting to delete file.`);
+                            }
 
                             ipcRenderer.send(channel, {});
                             break;
                         case useConfigInMainRequest:
-                            debug ? console.log(`${this.rendererLog} requesting to use store in electron main process.`) : null;
+                            if (debug) {
+                                console.log(`${this.rendererLog} requesting to use store in electron main process.`);
+                            }
+
+                            ipcRenderer.send(channel, {});
+                            break;
+                        case readUnprotectedConfigRequest:
+                            if (debug) {
+                                console.log(`${this.rendererLog} requesting to read key '${key}' from unprotected file.`);
+                            }
+
+                            ipcRenderer.send(channel, {
+                                key
+                            });
+                            break;
+                        case writeUnprotectedConfigRequest:
+                            if (debug) {
+                                console.log(`${this.rendererLog} requesting to write key:value to unprotected file => "'${key}':'${value}'".`);
+                            }
+
+                            ipcRenderer.send(channel, {
+                                key,
+                                value
+                            });
+                            break;
+                        case deleteUnprotectedConfigRequest:
+                            if (debug) {
+                                console.log(`${this.rendererLog} requesting to delete unprotected file.`);
+                            }
+
+                            ipcRenderer.send(channel, {});
+                            break;
+                        case useUnprotectedConfigInMainRequest:
+                            if (debug) {
+                                console.log(`${this.rendererLog} requesting to use unprotected store in electron main process.`);
+                            }
 
                             ipcRenderer.send(channel, {});
                             break;
@@ -253,6 +369,18 @@ export default class Store {
                                 case useConfigInMainResponse:
                                     console.log(`${this.rendererLog} ${!args.success ? "un-" : ""}successfully read store in electron main process.`);
                                     break;
+                                case readUnprotectedConfigResponse:
+                                    console.log(`${this.rendererLog} received unprotected value for key '${args.key}' => '${args.value}'.`);
+                                    break;
+                                case writeUnprotectedConfigResponse:
+                                    console.log(`${this.rendererLog} ${!args.success ? "un-" : ""}successfully wrote unprotected key '${args.key}' to file.`);
+                                    break;
+                                case deleteUnprotectedConfigResponse:
+                                    console.log(`${this.rendererLog} ${!args.success ? "un-" : ""}successfully deleted unprotected file.`);
+                                    break;
+                                case useUnprotectedConfigInMainResponse:
+                                    console.log(`${this.rendererLog} ${!args.success ? "un-" : ""}successfully read unprotected store in electron main process.`);
+                                    break;
                                 default:
                                     break;
                             }
@@ -269,21 +397,24 @@ export default class Store {
             },
             clearRendererBindings: () => {
                 // Clears all listeners
-                debug ? console.log(`${this.rendererLog} clearing all ipcRenderer listeners.`) : null;
+                if (debug) {
+                    console.log(`${this.rendererLog} clearing all ipcRenderer listeners.`);
+                }
 
-                for (var i = 0; i < this.validReceiveChannels.length; i++) {
+                for (let i = 0; i < this.validReceiveChannels.length; i++) {
                     ipcRenderer.removeAllListeners(this.validReceiveChannels[i]);
                 }
             }
         };
     }
 
-    mainBindings(ipcMain, browserWindow, fs, mainProcessCallback = undefined) {
+    mainBindings(ipcMain, browserWindow, fs, mainProcessCallback = undefined, unprotectedMainProcessCallback = undefined) {
         const {
             minify,
             debug,
             encrypt,
             path,
+            unprotectedPath,
             reset
         } = this.options;
 
@@ -292,23 +423,52 @@ export default class Store {
         const resetFiles = function () {
 
             // Possibly more secure(?), deleting contents in file before removal
-            debug ? console.log(`${this.mainLog} clearing data files.`) : null;
+            if (debug) {
+                console.log(`${this.mainLog} clearing data files.`);
+            }
             fs.writeFileSync(path, "");
             fs.writeFileSync(this.ivFile, "");
 
             // Delete file
-            debug ? console.log(`${this.mainLog} unlinking data files.`) : null;
+            if (debug) {
+                console.log(`${this.mainLog} unlinking data files.`);
+            }
             fs.unlinkSync(path);
             fs.unlinkSync(this.ivFile);
 
             // Reset cached file data
-            debug ? console.log(`${this.mainLog} clearing local variables.`) : null;
+            if (debug) {
+                console.log(`${this.mainLog} clearing local variables.`);
+            }
             this.iv = undefined;
             this.fileData = undefined;
         }.bind(this);
 
+        const resetUnprotectedFiles = function () {
+
+            // Possibly more secure(?), deleting contents in file before removal
+            if (debug) {
+                console.log(`${this.mainLog} clearing unprotected data files.`);
+            }
+            fs.writeFileSync(unprotectedPath, "");
+
+            // Delete file
+            if (debug) {
+                console.log(`${this.mainLog} unlinking unprotected data files.`);
+            }
+            fs.unlinkSync(unprotectedPath);
+
+            // Reset cached file data
+            if (debug) {
+                console.log(`${this.mainLog} clearing local variables.`);
+            }
+            this.unprotectedFileData = undefined;
+        }.bind(this);
+
         if (reset) {
-            debug ? console.log(`${this.mainLog} resetting all files because property "reset" was set to true when configuring the store.`) : null;
+            if (debug) {
+                console.log(`${this.mainLog} resetting all files because property "reset" was set to true when configuring the store.`);
+            }
 
             try {
                 resetFiles();
@@ -319,7 +479,9 @@ export default class Store {
 
         // Deletes IV/data files if requested
         ipcMain.on(deleteConfigRequest, (IpcMainEvent, args) => {
-            debug ? console.log(`${this.mainLog} received a request to delete data files.`) : null;
+            if (debug) {
+                console.log(`${this.mainLog} received a request to delete data files.`);
+            }
 
             let success = true;
             try {
@@ -339,7 +501,9 @@ export default class Store {
         // it's intended that the passkey be passed in via the renderer
         // process
         ipcMain.on(savePasskeyRequest, (IpcMainEvent, args) => {
-            debug ? console.log(`${this.mainLog} received a request to update the passkey to '${args.passkey}'.`) : null;
+            if (debug) {
+                console.log(`${this.mainLog} received a request to update the passkey to '${args.passkey}'.`);
+            }
 
             this.options.passkey = args.passkey;
 
@@ -351,7 +515,9 @@ export default class Store {
 
         // Anytime the renderer process requests for a file read
         ipcMain.on(readConfigRequest, (IpcMainEvent, args) => {
-            debug ? console.log(`${this.mainLog} received a request to read from the key '${args.key}' from the given file '${path}'.`) : null;
+            if (debug) {
+                console.log(`${this.mainLog} received a request to read from the key '${args.key}' from the given file '${path}'.`);
+            }
 
             fs.readFile(path, (error, data) => {
 
@@ -360,14 +526,16 @@ export default class Store {
                     // File does not exist, so let's create a file
                     // and give it an empty/default value
                     if (error.code === "ENOENT") {
-                        debug ? console.log(`${this.mainLog} did not find data file when trying read the key '${args.key}'. Creating an empty data file.`) : null;
+                        if (debug) {
+                            console.log(`${this.mainLog} did not find data file when trying read the key '${args.key}'. Creating an empty data file.`);
+                        }
 
                         let defaultData = {};
 
                         // We minify/ optional encrypt this default object here
                         // so that when we read the data later, everything works as expected
                         if (minify) {
-                            defaultData = decode(defaultData);
+                            defaultData = decoder.decode(defaultData);
                         } else {
                             defaultData = JSON.parse(defaultData);
                         }
@@ -402,17 +570,19 @@ export default class Store {
                     }
 
                     if (minify) {
-                        dataToRead = decode(dataToRead);
+                        dataToRead = decoder.decode(dataToRead);
                     } else {
                         dataToRead = JSON.parse(dataToRead);
                     }
-                } catch (error) {
-                    throw `${this.mainLog} encountered error '${error}' when trying to read file '${path}'. This file is probably corrupted or has been tampered with. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`;
+                } catch (error2) {
+                    throw `${this.mainLog} encountered error '${error2}' when trying to read file '${path}'. This file is probably corrupted or has been tampered with. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`;
                 }
 
                 this.fileData = dataToRead;
 
-                debug ? console.log(`${this.mainLog} read the key '${args.key}' from file => '${dataToRead[args.key]}'.`) : null;
+                if (debug) {
+                    console.log(`${this.mainLog} read the key '${args.key}' from file => '${dataToRead[args.key]}'.`);
+                }
                 browserWindow.webContents.send(readConfigResponse, {
                     success: true,
                     key: args.key,
@@ -426,7 +596,7 @@ export default class Store {
 
             // Wrapper function; since we call
             // this twice below
-            let writeToFile = function () {
+            const writeToFile = function () {
                 if (typeof args.key !== "undefined" && typeof args.value !== "undefined") {
                     this.fileData[args.key] = args.value;
                 }
@@ -435,7 +605,7 @@ export default class Store {
 
                 try {
                     if (minify) {
-                        dataToWrite = encode(dataToWrite);
+                        dataToWrite = encoder.encode(dataToWrite);
                     } else {
                         dataToWrite = JSON.stringify(dataToWrite);
                     }
@@ -451,7 +621,9 @@ export default class Store {
                 }
 
                 fs.writeFile(path, dataToWrite, (error) => {
-                    debug ? console.log(`${this.mainLog} wrote "'${args.key}':'${args.value}'" to file '${path}'.`) : null;
+                    if (debug) {
+                        console.log(`${this.mainLog} wrote "'${args.key}':'${args.value}'" to file '${path}'.`);
+                    }
                     browserWindow.webContents.send(writeConfigResponse, {
                         success: !error,
                         key: args.key
@@ -491,13 +663,13 @@ export default class Store {
                             }
 
                             if (minify) {
-                                dataInFile = decode(dataInFile);
+                                dataInFile = decoder.decode(dataInFile);
                             } else {
                                 dataInFile = JSON.parse(dataInFile);
                             }
                         }
-                    } catch (error) {
-                        throw `${this.mainLog} encountered error '${error}' when trying to read file '${path}'. This file is probably corrupted. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`;
+                    } catch (error2) {
+                        throw `${this.mainLog} encountered error '${error2}' when trying to read file '${path}'. This file is probably corrupted. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`;
                     }
 
                     this.fileData = dataInFile;
@@ -510,7 +682,9 @@ export default class Store {
 
         // Anytime the main process needs to use the store        
         ipcMain.on(useConfigInMainRequest, (IpcMainEvent, args) => {
-            debug ? console.log(`${this.mainLog} received a request to read store in electron main process.`) : null;
+            if (debug) {
+                console.log(`${this.mainLog} received a request to read store in electron main process.`);
+            }
 
             // If user would like to use store values in main electron process,
             // the user can request that a callback be ran in the main electron process
@@ -529,7 +703,9 @@ export default class Store {
                         // File does not exist, so let's create a file
                         // and give it an empty/default value
                         if (error.code === "ENOENT") {
-                            debug ? console.log(`${this.mainLog} did not find data file when trying read the data file from the main electron process.`) : null;
+                            if (debug) {
+                                console.log(`${this.mainLog} did not find data file when trying read the data file from the main electron process.`);
+                            }
 
                             mainProcessCallback(false, dataInFile);
 
@@ -551,15 +727,17 @@ export default class Store {
                         }
 
                         if (minify) {
-                            dataInFile = decode(dataInFile);
+                            dataInFile = decoder.decode(dataInFile);
                         } else {
                             dataInFile = JSON.parse(dataInFile);
                         }
-                    } catch (error) {
-                        throw `${this.mainLog} encountered error '${error}' when trying to read file '${path}'. This file is probably corrupted or has been tampered with. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`;
+                    } catch (error2) {
+                        throw `${this.mainLog} encountered error '${error2}' when trying to read file '${path}'. This file is probably corrupted or has been tampered with. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`;
                     }
 
-                    debug ? console.log(`${this.mainLog} read the store from the electron main process successfully.`) : null;
+                    if (debug) {
+                        console.log(`${this.mainLog} read the store from the electron main process successfully.`);
+                    }
 
                     mainProcessCallback(true, dataInFile);
                     browserWindow.webContents.send(useConfigInMainResponse, {
@@ -568,10 +746,245 @@ export default class Store {
                     return;
                 });
             } else {
-                throw `${this.mainLog} failed to take action when receiving a request to use the store in the main electron process. This has occurred because your callback is undefined, please ensure your callback is "const" so it is not garbage collected - this is the most likely reason for your error`;
+                throw `${this.mainLog} failed to take action when receiving a request to use the store in the main electron process. This has occurred because your mainProcessCallback callback is undefined, please ensure your callback is "const" so it is not garbage collected - this is the most likely reason for your error`;
             }
         });
-    };
+
+        // Deletes [unprotected] data files if requested
+        ipcMain.on(deleteUnprotectedConfigRequest, (IpcMainEvent, args) => {
+            if (debug) {
+                console.log(`${this.mainLog} received a request to delete unprotected data files.`);
+            }
+
+            let success = true;
+            try {
+                resetUnprotectedFiles();
+            } catch (error) {
+                console.error(`${this.mainLog} failed to reset unprotected data due to error: '${error}'. Please resolve this error and try again.`);
+                success = false;
+            }
+
+            browserWindow.webContents.send(deleteUnprotectedConfigResponse, {
+                success
+            });
+        });
+
+        // Anytime the renderer process requests for an unprotected file read
+        ipcMain.on(readUnprotectedConfigRequest, (IpcMainEvent, args) => {
+            if (debug) {
+                console.log(`${this.mainLog} received a request to read from the key '${args.key}' from the given unprotected file '${unprotectedPath}'.`);
+            }
+
+            fs.readFile(unprotectedPath, (error, data) => {
+
+                if (error) {
+
+                    // File does not exist, so let's create a file
+                    // and give it an empty/default value
+                    if (error.code === "ENOENT") {
+                        if (debug) {
+                            console.log(`${this.mainLog} did not find unprotected data file when trying read the key '${args.key}'. Creating an empty unprotected data file.`);
+                        }
+
+                        const defaultData = JSON.parse({});
+
+                        fs.writeFileSync(unprotectedPath, defaultData);
+                        browserWindow.webContents.send(readUnprotectedConfigResponse, {
+                            success: false,
+                            key: args.key,
+                            value: undefined
+                        });
+                        return;
+                    } else {
+                        throw `${this.mainLog} encountered error '${error}' when trying to read unprotected file '${unprotectedPath}'. This file is probably corrupted. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`;
+                    }
+                }
+
+                let dataToRead = data;
+
+                try {
+                    dataToRead = JSON.parse(dataToRead);
+                } catch (error2) {
+                    throw `${this.mainLog} encountered error '${error2}' when trying to read unprotected file '${unprotectedPath}'. This file is probably corrupted or has been tampered with. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`;
+                }
+
+                this.unprotectedFileData = dataToRead;
+
+                if (debug) {
+                    console.log(`${this.mainLog} read the key '${args.key}' from unprotected file => '${dataToRead[args.key]}'.`);
+                }
+                browserWindow.webContents.send(readUnprotectedConfigResponse, {
+                    success: true,
+                    key: args.key,
+                    value: dataToRead[args.key]
+                });
+            });
+        });
+
+        // Anytime the renderer process requests for an unprotected file write
+        ipcMain.on(writeUnprotectedConfigRequest, (IpcMainEvent, args) => {
+
+            // Wrapper function; since we call
+            // this twice below
+            const writeToFile = function () {
+                if (typeof args.key !== "undefined" && typeof args.value !== "undefined") {
+                    this.unprotectedFileData[args.key] = args.value;
+                }
+
+                let dataToWrite = this.unprotectedFileData;
+
+                try {
+                    dataToWrite = JSON.stringify(dataToWrite);
+                } catch (error) {
+                    throw `${this.mainLog} encountered error '${error}' when trying to write unprotected file '${unprotectedPath}'.`;
+                }
+
+                fs.writeFile(unprotectedPath, dataToWrite, (error) => {
+                    if (debug) {
+                        console.log(`${this.mainLog} wrote "'${args.key}':'${args.value}'" to file '${unprotectedPath}'.`);
+                    }
+                    browserWindow.webContents.send(writeUnprotectedConfigResponse, {
+                        success: !error,
+                        key: args.key
+                    });
+                });
+            }.bind(this);
+
+
+            // If we don't have any filedata saved yet,
+            // let's pull out the latest data from file
+            if (typeof this.unprotectedFileData === "undefined") {
+                fs.readFile(unprotectedPath, (error, data) => {
+
+                    if (error) {
+
+                        // File does not exist, so let's create a file
+                        // and give it an empty/default value
+                        if (error.code === "ENOENT") {
+                            this.unprotectedFileData = {};
+
+                            writeToFile();
+                            return;
+                        } else {
+                            throw `${this.mainLog} encountered error '${error}' when trying to read unprotected file '${unprotectedPath}'. This file is probably corrupted. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`;
+                        }
+                    }
+
+                    // Retrieve file contents
+                    let dataInFile = data;
+                    try {
+                        if (typeof data !== "undefined") {
+                            dataInFile = JSON.parse(dataInFile);
+                        }
+                    } catch (error2) {
+                        throw `${this.mainLog} encountered error '${error2}' when trying to read unprotected file '${path}'. This file is probably corrupted. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`;
+                    }
+
+                    this.unprotectedFileData = dataInFile;
+                    writeToFile();
+                });
+            } else {
+                writeToFile();
+            }
+        });
+
+        // Anytime the main process needs to use the store        
+        ipcMain.on(useUnprotectedConfigInMainRequest, (IpcMainEvent, args) => {
+            if (debug) {
+                console.log(`${this.mainLog} received a request to read unprotected store in electron main process.`);
+            }
+
+            // If user would like to use unprotected store values in main electron process,
+            // the user can request that a callback be ran in the main electron process
+            // when the "useUnprotectedConfigInMainRequest" request is received
+
+            // Be sure your "unprotectedMainProcessCallback" function is defined as "const"
+            // in your main process, otherwise the reference will be GC'd and
+            // this callback will never happen
+            if (typeof unprotectedMainProcessCallback !== "undefined") {
+
+                let dataInFile = {};
+                fs.readFile(unprotectedPath, (error, data) => {
+
+                    if (error) {
+
+                        // File does not exist, so let's create a file
+                        // and give it an empty/default value
+                        if (error.code === "ENOENT") {
+                            if (debug) {
+                                console.log(`${this.mainLog} did not find unprotected data file when trying read the unprotected data file from the main electron process.`);
+                            }
+
+                            unprotectedMainProcessCallback(false, dataInFile);
+
+                            browserWindow.webContents.send(useUnprotectedConfigInMainResponse, {
+                                success: false
+                            });
+                            return;
+                        }
+                    }
+
+                    dataInFile = data;
+
+                    try {
+                        dataInFile = JSON.parse(dataInFile);
+                    } catch (error2) {
+                        throw `${this.mainLog} encountered error '${error2}' when trying to read unprotected file '${path}'. This file is probably corrupted or has been tampered with. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`;
+                    }
+
+                    if (debug) {
+                        console.log(`${this.mainLog} read the unprotected store from the electron main process successfully.`);
+                    }
+
+                    unprotectedMainProcessCallback(true, dataInFile);
+                    browserWindow.webContents.send(useUnprotectedConfigInMainResponse, {
+                        success: true
+                    });
+                    return;
+                });
+            } else {
+                throw `${this.mainLog} failed to take action when receiving a request to use the unprotected store in the main electron process. This has occurred because your unprotectedMainProcessCallback callback is undefined, please ensure your callback is "const" so it is not garbage collected - this is the most likely reason for your error`;
+            }
+        });
+    }
+
+    mainIntialStore(fs) {
+        const {
+            debug,
+            unprotectedPath
+        } = this.options;
+
+        let data;
+        try {
+            data = fs.readFileSync(unprotectedPath);
+        } catch (error) {
+
+            // Unprotected file does not exist, so let's create a file
+            // and give it an empty/default value
+            if (error.code === "ENOENT") {
+                if (debug) {
+                    console.log(`${this.mainLog} did not find unprotected data file when trying read the key '${args.key}'. Creating an empty data file.`);
+                }
+
+                const defaultData = JSON.stringify({});
+
+                fs.writeFileSync(unprotectedPath, defaultData);
+                return defaultData;
+            } else {
+                throw `${this.mainLog} encountered error '${error}' when trying to read unprotected file '${unprotectedPath}'. This file is probably corrupted. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`;
+            }
+        }
+
+        let dataToRead = data;
+
+        try {
+            dataToRead = JSON.parse(dataToRead);
+        } catch (error2) {
+            throw `${this.mainLog} encountered error '${error2}' when trying to read unprotected file '${unprotectedPath}'. This file is probably corrupted or has been tampered with. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`;
+        }
+
+        return dataToRead;
+    }
 
     // Clears ipcMain bindings;
     // mainly intended to be used within Mac-OS
@@ -581,5 +994,9 @@ export default class Store {
         ipcMain.removeAllListeners(deleteConfigRequest);
         ipcMain.removeAllListeners(savePasskeyRequest);
         ipcMain.removeAllListeners(useConfigInMainRequest);
+        ipcMain.removeAllListeners(readUnprotectedConfigRequest);
+        ipcMain.removeAllListeners(writeUnprotectedConfigRequest);
+        ipcMain.removeAllListeners(deleteUnprotectedConfigRequest);
+        ipcMain.removeAllListeners(useUnprotectedConfigInMainRequest);
     }
 }

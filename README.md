@@ -323,28 +323,160 @@ window.api.store.onReceive(deleteConfigResponse, function(args){
 window.api.store.send(deleteConfigRequest);
 ```
 
+## Using the unprotected store (New since v1.3.0)
+There is now an unprotected store, driven by a [desired feature](https://github.com/reZach/secure-electron-template/issues/26). This unprotected store is a _separate_ file that exists in the same directory (by default) as your main store. You can save values in this store that you'd like to use to configure anything _before_ your app actually starts up, like a height or width of the [BrowserWindow](https://www.electronjs.org/docs/api/browser-window) in your electron app.
+
+In order to use the unprotected store, you'll make use of the `mainIntialStore` function, which can query this store's values. Here's an example of how that might work below.
+```javascript
+const {
+  app,
+  BrowserWindow,
+  ipcMain,
+  ...
+} = require("electron");
+const Store = require("secure-electron-store").default;
+const fs = require("fs");
+
+// Keep a global reference of the window object, if you don't, the window will
+// be closed automatically when the JavaScript object is garbage collected.
+let win;
+
+async function createWindow() {
+
+  const store = new Store({
+    path: app.getPath("userData")
+  });
+
+  // Use saved config values for configuring your
+  // BrowserWindow, for instance.
+  // NOTE - this config is not passcode protected
+  // and stores plaintext values
+  // NOTE - be sure to _ensure_ values exist before
+  // referencing them below!
+  let savedConfig = store.mainIntialStore(fs);
+
+  // Create the browser window.
+  win = new BrowserWindow({
+    width: savedConfig.width,
+    height: savedConfig.height,
+    webPreferences: {
+      contextIsolation: true,
+      additionalArguments: [`storePath:${app.getPath("userData")}`], // important!
+      preload: path.join(__dirname, "preload.js") // a preload script is necessary!
+    }
+  });
+
+  // Sets up main.js bindings for our electron store;
+  // callback is optional and allows you to use store in main process
+  const callback = function(success, store){
+    console.log(`${!success ? "Un-s" : "S"}uccessfully retrieved store in main process.`);
+    console.log(store); // {"key1": "value1", ... }
+    
+    win.maximize(); // modify BrowserWindow, for example
+  };
+
+  // There is a separate callback that can be
+  // called when the unprotected file is used in main.js.
+  // This function is no different than it's counterpart
+  const unprotectedCallback = function(success, store){
+    console.log(`${!success ? "Un-s" : "S"}uccessfully retrieved store in main process.`);
+    console.log(store); // {"key1": "value1", ... }
+    
+    win.maximize(); // modify BrowserWindow, for example
+  };
+  
+  store.mainBindings(ipcMain, win, fs, callback, unprotectedCallback); // there is an extra callback for unprotected file store access
+
+  // Load app
+  win.loadFile("path_to_my_html_file");
+}
+
+// This method will be called when Electron has finished
+// initialization and is ready to create browser windows.
+// Some APIs can only be used after this event occurs.
+app.on("ready", createWindow);
+
+app.on("window-all-closed", () => {
+  // On macOS it is common for applications and their menu bar
+  // to stay active until the user quits explicitly with Cmd + Q
+  if (process.platform !== "darwin") {
+    app.quit();
+  } else {
+    store.clearMainBindings(ipcMain);
+  }
+});
+```
+
+### Using the unprotected store
+Similar to using the regular store, the unprotected store can be interacted in _exactly_ the same way. The only difference you must be aware of are the messages that are used are different.
+```
+Instead of > Use this
+---------------------
+
+readConfigRequest > readUnprotectedConfigRequest
+readConfigResponse > readUnprotectedConfigResponse
+writeConfigRequest > writeUnprotectedConfigRequest
+writeConfigResponse > writeUnprotectedConfigResponse
+deleteConfigRequest > deleteUnprotectedConfigRequest
+deleteConfigResponse > deleteUnprotectedConfigResponse
+savePasskeyRequest > N/A (not available)
+savePasskeyResponse > N/A (not available)
+useConfigInMainRequest > useUnprotectedConfigInMainRequest
+useConfigInMainResponse > useUnprotectedConfigInMainResponse
+```
+
+Writing data to the unprotected store, an example.
+```javascript
+import { writeUnprotectedConfigRequest } from "secure-electron-store";
+
+// ...
+
+window.api.store.send(writeUnprotectedConfigRequest, "myvalue", "14");
+```
+
+To retrieve the data of the store on app launch, like it's regular counterpart, you can access it via `window.api.store.initialUnprotected()`.
+```jsx
+import React from "react";
+
+class Main extends React.Component {
+  constructor() {
+    super();
+
+    this.state = {
+      message: typeof window.api.store.initialUnprotected()["myvalue"] !== "undefined" ? window.api.store.initialUnprotected()["myvalue"] : "Default value",
+    };
+  }
+
+  //...
+}
+```
+
 ## Configuring options
 There are a number of options you can configure for your store. All of the below options are default values:
-```
+```json
 {
   debug: false,
   minify: true,
   encrypt: true,
   passkey: "",
   path: "",
+  unprotectedPath: "",
   filename: "data",
+  unprotectedFilename: "unprotected",
   extension: ".json",
   reset: false
 }
-```
+``` 
 
 - debug - prints debugging messages to the console. Errors will be shown _regardless_ of this option set or not.
 - minify - uses [msgpack](https://www.npmjs.com/package/@msgpack/msgpack) to minify your json in your config file.
 - encrypt - uses [crypto](https://nodejs.org/api/crypto.html) to encrypt your json in your config file.
 - passkey - a string, when using **encrypt**, that password-protects your config file.
 - path - the path to your config file. **It is essential that this option only be set in the file that creates your `BrowserWindow` and NOT in the preload file.** We recommend setting this value to `app.getPath("userData")`.
+- unprotectedPath - the path to your unprotected config file. By **default**, this path will default to the value of the **path** variable (so it's safe 99% of the time to never set this value).
 - filename - the name of the config file.
+- unprotectedFilename - the name of the unprotected config file.
 - extension - the extension of the config file. (The idea was that you could store something _other_ than json in your config file; an idea for a future enhancement).
 - reset - Anytime the app runs, your config file gets deleted/created-anew. Helpful for fixing any problems related to your config file or if you want a fresh config file everytime your app starts (when in testing/development).
 
-> _NOTE_: If you set an option when creating the `Store`, you must set this option in **both** files (ie. main / preload). This is required due to the way this package was written. (The one exception to this is the **path** option, which should only be set in the file that creates your `BrowserWindow`). 
+> _NOTE_: If you set an option when creating the `Store`, you must set this option in **both** files (ie. main / preload). This is required due to the way this package was written. (The one exception to this are the **path**/**unprotectedPath** options, which should only be set in the file that creates your `BrowserWindow`). 
