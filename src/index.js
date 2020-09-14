@@ -948,7 +948,7 @@ export default class Store {
         });
     }
 
-    mainIntialStore(fs) {
+    mainInitialStore(fs) {
         const {
             debug,
             unprotectedPath

@@ -326,7 +326,7 @@ window.api.store.send(deleteConfigRequest);
 ## Using the unprotected store (New since v1.3.0)
 There is now an unprotected store, driven by a [desired feature](https://github.com/reZach/secure-electron-template/issues/26). This unprotected store is a _separate_ file that exists in the same directory (by default) as your main store. You can save values in this store that you'd like to use to configure anything _before_ your app actually starts up, like a height or width of the [BrowserWindow](https://www.electronjs.org/docs/api/browser-window) in your electron app.
 
-In order to use the unprotected store, you'll make use of the `mainIntialStore` function, which can query this store's values. Here's an example of how that might work below.
+In order to use the unprotected store, you'll make use of the `mainInitialStore` function, which can query this store's values. Here's an example of how that might work below.
 ```javascript
 const {
   app,
@@ -353,7 +353,7 @@ async function createWindow() {
   // and stores plaintext values
   // NOTE - be sure to _ensure_ values exist before
   // referencing them below!
-  let savedConfig = store.mainIntialStore(fs);
+  let savedConfig = store.mainInitialStore(fs);
 
   // Create the browser window.
   win = new BrowserWindow({
