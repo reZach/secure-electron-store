@@ -3,6 +3,12 @@ This is a close copy/fork of [electron-store](https://github.com/sindresorhus/el
 
 Data is being saved in a `.json` file, with key/value pairs.
 
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=reZach_secure-electron-store&metric=alert_status)](https://sonarcloud.io/dashboard?id=reZach_secure-electron-store)
+[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=reZach_secure-electron-store&metric=security_rating)](https://sonarcloud.io/dashboard?id=reZach_secure-electron-store)
+[![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=reZach_secure-electron-store&metric=sqale_rating)](https://sonarcloud.io/dashboard?id=reZach_secure-electron-store)
+[![Bugs](https://sonarcloud.io/api/project_badges/measure?project=reZach_secure-electron-store&metric=bugs)](https://sonarcloud.io/dashboard?id=reZach_secure-electron-store)
+[![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=reZach_secure-electron-store&metric=vulnerabilities)](https://sonarcloud.io/dashboard?id=reZach_secure-electron-store)
+
 ## Getting started
 To set up secure-electron-store, follow these steps:
 
