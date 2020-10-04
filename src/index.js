@@ -3,7 +3,7 @@ import {
     Decoder
 } from "@msgpack/msgpack";
 const crypto = require("crypto");
-const path = require("path");
+const pathModule = require("path");
 
 // Faster than using 'encode' or 'decode' from @msgpack/msgpack
 const encoder = new Encoder();
@@ -85,9 +85,9 @@ export default class Store {
         }
 
         const rootPath = this.options.path;
-        this.ivFile = path.join(rootPath, "iv.txt");
-        this.options.path = path.join(rootPath, `${this.options.filename}${this.options.extension}`);
-        this.options.unprotectedPath = path.join(this.options.unprotectedPath.length === 0 ? rootPath : this.options.unprotectedPath, `${this.options.unprotectedFilename}${this.options.extension}`);
+        this.ivFile = pathModule.join(rootPath, "iv.txt");
+        this.options.path = pathModule.join(rootPath, `${this.options.filename}${this.options.extension}`);
+        this.options.unprotectedPath = pathModule.join(this.options.unprotectedPath.length === 0 ? rootPath : this.options.unprotectedPath, `${this.options.unprotectedFilename}${this.options.extension}`);
         this.validSendChannels = [readConfigRequest, readUnprotectedConfigRequest, writeConfigRequest, writeUnprotectedConfigRequest, savePasskeyRequest, deleteConfigRequest, deleteUnprotectedConfigRequest, useConfigInMainRequest, useUnprotectedConfigInMainRequest];
         this.validReceiveChannels = [readConfigResponse, readUnprotectedConfigResponse, writeConfigResponse, writeUnprotectedConfigResponse, savePasskeyResponse, deleteConfigResponse, deleteUnprotectedConfigResponse, useConfigInMainResponse, useUnprotectedConfigInMainResponse];
 
