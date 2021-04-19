@@ -963,13 +963,13 @@ export default class Store {
             // and give it an empty/default value
             if (error.code === "ENOENT") {
                 if (debug) {
-                    console.log(`${this.mainLog} did not find unprotected data file when trying read the key '${args.key}'. Creating an empty data file.`);
+                    console.log(`${this.mainLog} did not find unprotected data file when trying read '${unprotectedPath}'. Creating an empty data file.`);
                 }
 
                 const defaultData = JSON.stringify({});
 
                 fs.writeFileSync(unprotectedPath, defaultData);
-                return defaultData;
+                return {};
             } else {
                 throw `${this.mainLog} encountered error '${error}' when trying to read unprotected file '${unprotectedPath}'. This file is probably corrupted. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`;
             }
