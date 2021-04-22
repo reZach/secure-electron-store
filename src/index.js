@@ -47,6 +47,8 @@ const generateIv = function () {
     return crypto.randomBytes(32).toString("hex").slice(0, 16);
 }
 
+const algorithm = "aes-256-gcm";
+
 export default class Store {
     constructor(options) {
         this.options = defaultOptions;
@@ -80,7 +82,7 @@ export default class Store {
 
                 if (this.options.debug) console.log(`${this.rendererLog} initializing. Parsed 'storePath' value: '${this.options.path}'.`);
             } catch (error) {
-                throw `Could not find property 'additionalArguments' value beginning with 'storePath:' in your BrowserWindow. Please ensure this is set! Error: ${error}`;
+                throw new Error(`Could not find property 'additionalArguments' value beginning with 'storePath:' in your BrowserWindow. Please ensure this is set! Error: ${error}`);
             }
         }
 
@@ -164,7 +166,7 @@ export default class Store {
                 if (encrypt) {
                     this.getIv(fs);
 
-                    const cipher = crypto.createCipheriv("aes-256-cbc", crypto.createHash("sha512").update(this.options.passkey).digest("base64").substr(0, 32), this.iv);
+                    const cipher = crypto.createCipheriv(algorithm, crypto.createHash("sha512").update(this.options.passkey).digest("base64").substr(0, 32), this.iv);
                     defaultData = Buffer.concat([cipher.update(defaultData), cipher.final()]);
                 }
 
@@ -172,7 +174,7 @@ export default class Store {
                 this.initialFileDataParsed = true;
                 fs.writeFileSync(path, defaultData);
             } else {
-                throw `${this.rendererLog} encountered error '${error}' when trying to read file '${path}'. This file is probably corrupted. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`;
+                throw new Error(`${this.rendererLog} encountered error '${error}' when trying to read file '${path}'. This file is probably corrupted. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`);
             }
         }
 
@@ -199,7 +201,7 @@ export default class Store {
                 this.initialUnprotectedFileDataParsed = true;
                 fs.writeFileSync(unprotectedPath, defaultData);
             } else {
-                throw `${this.rendererLog} encountered error '${error}' when trying to read file '${unprotectedPath}'. This file is probably corrupted. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`;
+                throw new Error(`${this.rendererLog} encountered error '${error}' when trying to read file '${unprotectedPath}'. This file is probably corrupted. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`);
             }
         }
 
@@ -236,7 +238,7 @@ export default class Store {
                         this.initialFileData = JSON.parse(this.initialFileData);
                     }
                 } catch (error) {
-                    throw `${this.rendererLog} encountered error '${error}' when trying to read file '${path}'. This file is probably corrupted or has been tampered with. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`;
+                    throw new Error(`${this.rendererLog} encountered error '${error}' when trying to read file '${path}'. This file is probably corrupted or has been tampered with. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`);
                 }
                 this.initialFileDataParsed = true;
 
@@ -258,7 +260,7 @@ export default class Store {
                         this.initialUnprotectedFileData = JSON.parse(this.initialUnprotectedFileData);
                     }
                 } catch (error) {
-                    throw `${this.rendererLog} encountered error '${error}' when trying to read file '${unprotectedPath}'. This file is probably corrupted or has been tampered with. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`;
+                    throw new Error(`${this.rendererLog} encountered error '${error}' when trying to read file '${unprotectedPath}'. This file is probably corrupted or has been tampered with. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`);
                 }
                 this.initialUnprotectedFileDataParsed = true;
 
@@ -401,8 +403,8 @@ export default class Store {
                     console.log(`${this.rendererLog} clearing all ipcRenderer listeners.`);
                 }
 
-                for (let i = 0; i < this.validReceiveChannels.length; i++) {
-                    ipcRenderer.removeAllListeners(this.validReceiveChannels[i]);
+                for (let validChannel of this.validReceiveChannels){
+                    ipcRenderer.removeAllListeners(validChannel);
                 }
             }
         };
@@ -473,7 +475,7 @@ export default class Store {
             try {
                 resetFiles();
             } catch (error) {
-                throw `${this.mainLog} could not reset files, please resolve error '${error}' and try again.`;
+                throw new Error(`${this.mainLog} could not reset files, please resolve error '${error}' and try again.`);
             }
         }
 
@@ -543,7 +545,7 @@ export default class Store {
                         if (encrypt) {
                             this.getIv(fs);
 
-                            const cipher = crypto.createCipheriv("aes-256-cbc", crypto.createHash("sha512").update(this.options.passkey).digest("base64").substr(0, 32), this.iv);
+                            const cipher = crypto.createCipheriv(algorithm, crypto.createHash("sha512").update(this.options.passkey).digest("base64").substr(0, 32), this.iv);
                             defaultData = Buffer.concat([cipher.update(defaultData), cipher.final()]);
                         }
 
@@ -555,7 +557,7 @@ export default class Store {
                         });
                         return;
                     } else {
-                        throw `${this.mainLog} encountered error '${error}' when trying to read file '${path}'. This file is probably corrupted. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`;
+                        throw new Error(`${this.mainLog} encountered error '${error}' when trying to read file '${path}'. This file is probably corrupted. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`);
                     }
                 }
 
@@ -575,7 +577,7 @@ export default class Store {
                         dataToRead = JSON.parse(dataToRead);
                     }
                 } catch (error2) {
-                    throw `${this.mainLog} encountered error '${error2}' when trying to read file '${path}'. This file is probably corrupted or has been tampered with. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`;
+                    throw new Error(`${this.mainLog} encountered error '${error2}' when trying to read file '${path}'. This file is probably corrupted or has been tampered with. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`);
                 }
 
                 this.fileData = dataToRead;
@@ -613,11 +615,11 @@ export default class Store {
                     if (encrypt) {
                         this.getIv(fs);
 
-                        const cipher = crypto.createCipheriv("aes-256-cbc", crypto.createHash("sha512").update(this.options.passkey).digest("base64").substr(0, 32), this.iv);
+                        const cipher = crypto.createCipheriv(algorithm, crypto.createHash("sha512").update(this.options.passkey).digest("base64").substr(0, 32), this.iv);
                         dataToWrite = Buffer.concat([cipher.update(dataToWrite), cipher.final()]);
                     }
                 } catch (error) {
-                    throw `${this.mainLog} encountered error '${error}' when trying to write file '${path}'.`;
+                    throw new Error(`${this.mainLog} encountered error '${error}' when trying to write file '${path}'.`);
                 }
 
                 fs.writeFile(path, dataToWrite, (error) => {
@@ -647,7 +649,7 @@ export default class Store {
                             writeToFile();
                             return;
                         } else {
-                            throw `${this.mainLog} encountered error '${error}' when trying to read file '${path}'. This file is probably corrupted. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`;
+                            throw new Error(`${this.mainLog} encountered error '${error}' when trying to read file '${path}'. This file is probably corrupted. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`);
                         }
                     }
 
@@ -669,7 +671,7 @@ export default class Store {
                             }
                         }
                     } catch (error2) {
-                        throw `${this.mainLog} encountered error '${error2}' when trying to read file '${path}'. This file is probably corrupted. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`;
+                        throw new Error(`${this.mainLog} encountered error '${error2}' when trying to read file '${path}'. This file is probably corrupted. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`);
                     }
 
                     this.fileData = dataInFile;
@@ -732,7 +734,7 @@ export default class Store {
                             dataInFile = JSON.parse(dataInFile);
                         }
                     } catch (error2) {
-                        throw `${this.mainLog} encountered error '${error2}' when trying to read file '${path}'. This file is probably corrupted or has been tampered with. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`;
+                        throw new Error(`${this.mainLog} encountered error '${error2}' when trying to read file '${path}'. This file is probably corrupted or has been tampered with. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`);
                     }
 
                     if (debug) {
@@ -743,10 +745,9 @@ export default class Store {
                     browserWindow.webContents.send(useConfigInMainResponse, {
                         success: true
                     });
-                    return;
                 });
             } else {
-                throw `${this.mainLog} failed to take action when receiving a request to use the store in the main electron process. This has occurred because your mainProcessCallback callback is undefined, please ensure your callback is "const" so it is not garbage collected - this is the most likely reason for your error`;
+                throw new Error(`${this.mainLog} failed to take action when receiving a request to use the store in the main electron process. This has occurred because your mainProcessCallback callback is undefined, please ensure your callback is "const" so it is not garbage collected - this is the most likely reason for your error`);
             }
         });
 
@@ -796,7 +797,7 @@ export default class Store {
                         });
                         return;
                     } else {
-                        throw `${this.mainLog} encountered error '${error}' when trying to read unprotected file '${unprotectedPath}'. This file is probably corrupted. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`;
+                        throw new Error(`${this.mainLog} encountered error '${error}' when trying to read unprotected file '${unprotectedPath}'. This file is probably corrupted. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`);
                     }
                 }
 
@@ -805,7 +806,7 @@ export default class Store {
                 try {
                     dataToRead = JSON.parse(dataToRead);
                 } catch (error2) {
-                    throw `${this.mainLog} encountered error '${error2}' when trying to read unprotected file '${unprotectedPath}'. This file is probably corrupted or has been tampered with. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`;
+                    throw new Error(`${this.mainLog} encountered error '${error2}' when trying to read unprotected file '${unprotectedPath}'. This file is probably corrupted or has been tampered with. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`);
                 }
 
                 this.unprotectedFileData = dataToRead;
@@ -836,7 +837,7 @@ export default class Store {
                 try {
                     dataToWrite = JSON.stringify(dataToWrite);
                 } catch (error) {
-                    throw `${this.mainLog} encountered error '${error}' when trying to write unprotected file '${unprotectedPath}'.`;
+                    throw new Error(`${this.mainLog} encountered error '${error}' when trying to write unprotected file '${unprotectedPath}'.`);
                 }
 
                 fs.writeFile(unprotectedPath, dataToWrite, (error) => {
@@ -866,7 +867,7 @@ export default class Store {
                             writeToFile();
                             return;
                         } else {
-                            throw `${this.mainLog} encountered error '${error}' when trying to read unprotected file '${unprotectedPath}'. This file is probably corrupted. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`;
+                            throw new Error(`${this.mainLog} encountered error '${error}' when trying to read unprotected file '${unprotectedPath}'. This file is probably corrupted. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`);
                         }
                     }
 
@@ -877,7 +878,7 @@ export default class Store {
                             dataInFile = JSON.parse(dataInFile);
                         }
                     } catch (error2) {
-                        throw `${this.mainLog} encountered error '${error2}' when trying to read unprotected file '${path}'. This file is probably corrupted. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`;
+                        throw new Error(`${this.mainLog} encountered error '${error2}' when trying to read unprotected file '${path}'. This file is probably corrupted. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`);
                     }
 
                     this.unprotectedFileData = dataInFile;
@@ -929,7 +930,7 @@ export default class Store {
                     try {
                         dataInFile = JSON.parse(dataInFile);
                     } catch (error2) {
-                        throw `${this.mainLog} encountered error '${error2}' when trying to read unprotected file '${path}'. This file is probably corrupted or has been tampered with. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`;
+                        throw new Error(`${this.mainLog} encountered error '${error2}' when trying to read unprotected file '${path}'. This file is probably corrupted or has been tampered with. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`);
                     }
 
                     if (debug) {
@@ -940,10 +941,9 @@ export default class Store {
                     browserWindow.webContents.send(useUnprotectedConfigInMainResponse, {
                         success: true
                     });
-                    return;
                 });
             } else {
-                throw `${this.mainLog} failed to take action when receiving a request to use the unprotected store in the main electron process. This has occurred because your unprotectedMainProcessCallback callback is undefined, please ensure your callback is "const" so it is not garbage collected - this is the most likely reason for your error`;
+                throw new Error(`${this.mainLog} failed to take action when receiving a request to use the unprotected store in the main electron process. This has occurred because your unprotectedMainProcessCallback callback is undefined, please ensure your callback is "const" so it is not garbage collected - this is the most likely reason for your error`);
             }
         });
     }
@@ -971,7 +971,7 @@ export default class Store {
                 fs.writeFileSync(unprotectedPath, defaultData);
                 return {};
             } else {
-                throw `${this.mainLog} encountered error '${error}' when trying to read unprotected file '${unprotectedPath}'. This file is probably corrupted. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`;
+                throw new Error(`${this.mainLog} encountered error '${error}' when trying to read unprotected file '${unprotectedPath}'. This file is probably corrupted. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`);
             }
         }
 
@@ -980,7 +980,7 @@ export default class Store {
         try {
             dataToRead = JSON.parse(dataToRead);
         } catch (error2) {
-            throw `${this.mainLog} encountered error '${error2}' when trying to read unprotected file '${unprotectedPath}'. This file is probably corrupted or has been tampered with. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`;
+            throw new Error(`${this.mainLog} encountered error '${error2}' when trying to read unprotected file '${unprotectedPath}'. This file is probably corrupted or has been tampered with. To fix this error, you may set "reset" to true in the options in your main process where you configure your store, or you can turn off your app, delete (recommended) or fix this file and restart your app to fix this issue.`);
         }
 
         return dataToRead;
