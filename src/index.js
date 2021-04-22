@@ -47,8 +47,6 @@ const generateIv = function () {
     return crypto.randomBytes(32).toString("hex").slice(0, 16);
 }
 
-const algorithm = "aes-256-gcm";
-
 export default class Store {
     constructor(options) {
         this.options = defaultOptions;
@@ -166,7 +164,7 @@ export default class Store {
                 if (encrypt) {
                     this.getIv(fs);
 
-                    const cipher = crypto.createCipheriv(algorithm, crypto.createHash("sha512").update(this.options.passkey).digest("base64").substr(0, 32), this.iv);
+                    const cipher = crypto.createCipheriv("aes-256-cbc", crypto.createHash("sha512").update(this.options.passkey).digest("base64").substr(0, 32), this.iv);
                     defaultData = Buffer.concat([cipher.update(defaultData), cipher.final()]);
                 }
 
@@ -545,7 +543,7 @@ export default class Store {
                         if (encrypt) {
                             this.getIv(fs);
 
-                            const cipher = crypto.createCipheriv(algorithm, crypto.createHash("sha512").update(this.options.passkey).digest("base64").substr(0, 32), this.iv);
+                            const cipher = crypto.createCipheriv("aes-256-cbc", crypto.createHash("sha512").update(this.options.passkey).digest("base64").substr(0, 32), this.iv);
                             defaultData = Buffer.concat([cipher.update(defaultData), cipher.final()]);
                         }
 
@@ -615,7 +613,7 @@ export default class Store {
                     if (encrypt) {
                         this.getIv(fs);
 
-                        const cipher = crypto.createCipheriv(algorithm, crypto.createHash("sha512").update(this.options.passkey).digest("base64").substr(0, 32), this.iv);
+                        const cipher = crypto.createCipheriv("aes-256-cbc", crypto.createHash("sha512").update(this.options.passkey).digest("base64").substr(0, 32), this.iv);
                         dataToWrite = Buffer.concat([cipher.update(dataToWrite), cipher.final()]);
                     }
                 } catch (error) {
