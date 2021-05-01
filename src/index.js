@@ -785,7 +785,7 @@ export default class Store {
                             console.log(`${this.mainLog} did not find unprotected data file when trying read the key '${args.key}'. Creating an empty unprotected data file.`);
                         }
 
-                        const defaultData = JSON.parse({});
+                        const defaultData = JSON.stringify({});
 
                         fs.writeFileSync(unprotectedPath, defaultData);
                         browserWindow.webContents.send(readUnprotectedConfigResponse, {
