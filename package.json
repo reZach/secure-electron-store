@@ -1,6 +1,6 @@
 {
   "name": "secure-electron-store",
-  "version": "3.0.1",
+  "version": "3.0.2",
   "description": "A secure electron-store that uses ipcMain/ipcRenderer.",
   "main": "lib/index.js",
   "scripts": {
@@ -18,13 +18,13 @@
   },
   "homepage": "https://github.com/reZach/secure-electron-store#readme",
   "devDependencies": {
-    "@babel/cli": "^7.13.16",
-    "@babel/core": "^7.13.16",
-    "@babel/preset-env": "^7.13.15",
+    "@babel/cli": "^7.14.8",
+    "@babel/core": "^7.14.8",
+    "@babel/preset-env": "^7.14.8",
     "babel-preset-minify": "^0.5.1"
   },
   "dependencies": {
-    "@msgpack/msgpack": "^2.6.0",
+    "@msgpack/msgpack": "^2.7.0",
     "process": "^0.11.10"
   }
 }
