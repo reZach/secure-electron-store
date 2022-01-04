@@ -2,6 +2,10 @@ import {
     Encoder,
     Decoder
 } from "@msgpack/msgpack";
+import {
+    encrypt as gcmEncrypt,
+    decrypt as gcmDecrypt
+} from "./gcm.js";
 const crypto = require("crypto");
 const pathModule = require("path");
 
@@ -19,7 +23,8 @@ const defaultOptions = {
     filename: "data",
     unprotectedFilename: "unprotected",
     extension: ".json",
-    reset: false
+    reset: false,
+    gcm: true
 };
 
 // Electron-specific; must match mainIpc
@@ -136,7 +141,8 @@ export default class Store {
             debug,
             encrypt,
             path,
-            unprotectedPath
+            unprotectedPath,
+            gcm
         } = this.options;
 
         // Initially read the file contents,
@@ -162,10 +168,17 @@ export default class Store {
                 }
 
                 if (encrypt) {
-                    this.getIv(fs);
 
-                    const cipher = crypto.createCipheriv("aes-256-cbc", crypto.createHash("sha512").update(this.options.passkey).digest("base64").substr(0, 32), this.iv);
-                    defaultData = Buffer.concat([cipher.update(defaultData), cipher.final()]);
+                    if (!gcm) {
+                        // Original implementation
+                        this.getIv(fs);
+
+                        const cipher = crypto.createCipheriv("aes-256-cbc", crypto.createHash("sha512").update(this.options.passkey).digest("base64").substr(0, 32), this.iv);
+                        defaultData = Buffer.concat([cipher.update(defaultData), cipher.final()]);
+                    } else {
+                        // New implementation
+                        defaultData = gcmEncrypt(defaultData, this.options.passkey);
+                    }
                 }
 
                 this.initialFileData = {};
@@ -224,10 +237,17 @@ export default class Store {
 
                 try {
                     if (encrypt) {
-                        this.getIv(fs);
 
-                        const decipher = crypto.createDecipheriv("aes-256-cbc", crypto.createHash("sha512").update(this.options.passkey).digest("base64").substr(0, 32), this.iv);
-                        this.initialFileData = Buffer.concat([decipher.update(this.initialFileData), decipher.final()]);
+                        if (!gcm) {
+                            // Original implementation
+                            this.getIv(fs);
+
+                            const decipher = crypto.createDecipheriv("aes-256-cbc", crypto.createHash("sha512").update(this.options.passkey).digest("base64").substr(0, 32), this.iv);
+                            this.initialFileData = Buffer.concat([decipher.update(this.initialFileData), decipher.final()]);
+                        } else {
+                            // New implementation
+                            this.initialFileData = gcmDecrypt(this.initialFileData, this.options.passkey);
+                        }
                     }
 
                     if (minify) {
@@ -243,6 +263,13 @@ export default class Store {
                 return this.initialFileData;
             },
             initialUnprotected: () => {
+                // Sandbox mode doesn't support the initial
+                // store in the renderer process. Instead,
+                // we should request the data via IPC
+                if (sandboxMode) {
+                    return undefined;
+                }
+
                 if (this.initialUnprotectedFileDataParsed) {
                     return this.initialUnprotectedFileData;
                 }
@@ -401,7 +428,7 @@ export default class Store {
                     console.log(`${this.rendererLog} clearing all ipcRenderer listeners.`);
                 }
 
-                for (let validChannel of this.validReceiveChannels){
+                for (let validChannel of this.validReceiveChannels) {
                     ipcRenderer.removeAllListeners(validChannel);
                 }
             }
@@ -415,7 +442,8 @@ export default class Store {
             encrypt,
             path,
             unprotectedPath,
-            reset
+            reset,
+            gcm
         } = this.options;
 
         // Clears and deletes each file; useful if the files have been tampered
@@ -541,10 +569,17 @@ export default class Store {
                         }
 
                         if (encrypt) {
-                            this.getIv(fs);
 
-                            const cipher = crypto.createCipheriv("aes-256-cbc", crypto.createHash("sha512").update(this.options.passkey).digest("base64").substr(0, 32), this.iv);
-                            defaultData = Buffer.concat([cipher.update(defaultData), cipher.final()]);
+                            if (!gcm) {
+                                // Original implementation
+                                this.getIv(fs);
+
+                                const cipher = crypto.createCipheriv("aes-256-cbc", crypto.createHash("sha512").update(this.options.passkey).digest("base64").substr(0, 32), this.iv);
+                                defaultData = Buffer.concat([cipher.update(defaultData), cipher.final()]);
+                            } else {
+                                // New implementation
+                                defaultData = gcmEncrypt(defaultData, this.options.passkey);
+                            }
                         }
 
                         fs.writeFileSync(path, defaultData);
@@ -563,10 +598,17 @@ export default class Store {
 
                 try {
                     if (encrypt) {
-                        this.getIv(fs);
 
-                        const decipher = crypto.createDecipheriv("aes-256-cbc", crypto.createHash("sha512").update(this.options.passkey).digest("base64").substr(0, 32), this.iv);
-                        dataToRead = Buffer.concat([decipher.update(dataToRead), decipher.final()]);
+                        if (!gcm) {
+                            // Original implementation
+                            this.getIv(fs);
+
+                            const decipher = crypto.createDecipheriv("aes-256-cbc", crypto.createHash("sha512").update(this.options.passkey).digest("base64").substr(0, 32), this.iv);
+                            dataToRead = Buffer.concat([decipher.update(dataToRead), decipher.final()]);
+                        } else {
+                            // New implementation
+                            dataToRead = gcmDecrypt(dataToRead, this.options.passkey);
+                        }
                     }
 
                     if (minify) {
@@ -611,10 +653,17 @@ export default class Store {
                     }
 
                     if (encrypt) {
-                        this.getIv(fs);
 
-                        const cipher = crypto.createCipheriv("aes-256-cbc", crypto.createHash("sha512").update(this.options.passkey).digest("base64").substr(0, 32), this.iv);
-                        dataToWrite = Buffer.concat([cipher.update(dataToWrite), cipher.final()]);
+                        if (!gcm) {
+                            // Original implementation
+                            this.getIv(fs);
+
+                            const cipher = crypto.createCipheriv("aes-256-cbc", crypto.createHash("sha512").update(this.options.passkey).digest("base64").substr(0, 32), this.iv);
+                            dataToWrite = Buffer.concat([cipher.update(dataToWrite), cipher.final()]);
+                        } else {
+                            // New implementation
+                            dataToWrite = gcmEncrypt(dataToWrite, this.options.passkey);
+                        }
                     }
                 } catch (error) {
                     throw new Error(`${this.mainLog} encountered error '${error}' when trying to write file '${path}'.`);
@@ -656,10 +705,17 @@ export default class Store {
                     try {
                         if (typeof data !== "undefined") {
                             if (encrypt) {
-                                this.getIv(fs);
 
-                                const decipher = crypto.createDecipheriv("aes-256-cbc", crypto.createHash("sha512").update(this.options.passkey).digest("base64").substr(0, 32), this.iv);
-                                dataInFile = Buffer.concat([decipher.update(dataInFile), decipher.final()]);
+                                if (!gcm){
+                                    // Original implementation
+                                    this.getIv(fs);
+
+                                    const decipher = crypto.createDecipheriv("aes-256-cbc", crypto.createHash("sha512").update(this.options.passkey).digest("base64").substr(0, 32), this.iv);
+                                    dataInFile = Buffer.concat([decipher.update(dataInFile), decipher.final()]);
+                                } else {
+                                    // New implementation
+                                    dataInFile = gcmDecrypt(dataInFile, this.options.passkey);
+                                }                                
                             }
 
                             if (minify) {
@@ -719,16 +775,28 @@ export default class Store {
                     dataInFile = data;
 
                     try {
+                        console.log("ABC");
                         if (encrypt) {
-                            this.getIv(fs);
 
-                            const decipher = crypto.createDecipheriv("aes-256-cbc", crypto.createHash("sha512").update(this.options.passkey).digest("base64").substr(0, 32), this.iv);
-                            dataInFile = Buffer.concat([decipher.update(dataInFile), decipher.final()]);
+                            if (!gcm){
+                                // Original implementation
+                                this.getIv(fs);
+
+                                const decipher = crypto.createDecipheriv("aes-256-cbc", crypto.createHash("sha512").update(this.options.passkey).digest("base64").substr(0, 32), this.iv);
+                                dataInFile = Buffer.concat([decipher.update(dataInFile), decipher.final()]);
+                            } else {
+                                console.log("ABC1");
+                                console.log(dataInFile);
+                                // New implementation
+                                dataInFile = gcmDecrypt(dataInFile, this.options.passkey);
+                            }                            
                         }
 
                         if (minify) {
+                            console.log("ABC2");
                             dataInFile = decoder.decode(dataInFile);
                         } else {
+                            console.log("ABC3");
                             dataInFile = JSON.parse(dataInFile);
                         }
                     } catch (error2) {
