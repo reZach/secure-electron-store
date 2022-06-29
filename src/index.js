@@ -77,8 +77,7 @@ export default class Store {
             try {
                 const arg = process.argv.filter(p => p.indexOf("--storePath=") >= 0)[0];
                 this.options.path = arg.substr(arg.indexOf(":") + 1);
-                this.options.path = this.options.path.replaceAll("||", "\\"); // As of Electron v14, passing "\" doesn't work in additionalArguments. We have to replace our token "||" with "\" to maintain functionality
-                console.log(this.options.path);
+                this.options.path = this.options.path.replaceAll("||", "\\"); // As of Electron v14, passing "\" doesn't work in additionalArguments. We have to replace our token "||" with "\" to maintain functionality                
 
                 if (this.options.debug) console.log(`${this.rendererLog} initializing. Parsed 'storePath' value: '${this.options.path}'.`);
             } catch (error) {
