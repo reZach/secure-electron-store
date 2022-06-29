@@ -75,8 +75,10 @@ export default class Store {
         // process if we haven't set a new path from our options
         if (typeof options === "undefined" || options.path !== defaultOptions.path) {
             try {
-                const arg = process.argv.filter(p => p.indexOf("storePath:") >= 0)[0];
+                const arg = process.argv.filter(p => p.indexOf("--storePath=") >= 0)[0];
                 this.options.path = arg.substr(arg.indexOf(":") + 1);
+                this.options.path = this.options.path.replaceAll("||", "\\"); // As of Electron v14, passing "\" doesn't work in additionalArguments. We have to replace our token "||" with "\" to maintain functionality
+                console.log(this.options.path);
 
                 if (this.options.debug) console.log(`${this.rendererLog} initializing. Parsed 'storePath' value: '${this.options.path}'.`);
             } catch (error) {
@@ -996,5 +998,12 @@ export default class Store {
         ipcMain.removeAllListeners(writeUnprotectedConfigRequest);
         ipcMain.removeAllListeners(deleteUnprotectedConfigRequest);
         ipcMain.removeAllListeners(useUnprotectedConfigInMainRequest);
+    }
+
+    // Santizes path due to Electron upgrade (v14 and onwards) that
+    // broke passing "\" characters in the additionalArguments.
+    // "||" will be translated into "\"
+    sanitizePath(path){
+        return path.replaceAll("\\", "||");
     }
 }
