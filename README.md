@@ -35,6 +35,10 @@ const fs = require("fs");
 let win;
 
 async function createWindow() {
+  
+  const store = new Store({
+    path: app.getPath("userData")
+  });
 
   // Create the browser window.
   win = new BrowserWindow({
@@ -42,15 +46,12 @@ async function createWindow() {
     height: 600,
     webPreferences: {
       contextIsolation: true,
-      additionalArguments: [`storePath:${app.getPath("userData")}`], // important!
+      additionalArguments: [`--storePath=${store.sanitizePath(app.getPath("userData"))}`], // important!
       preload: path.join(__dirname, "preload.js") // a preload script is necessary!
     }
   });
 
   // Sets up main.js bindings for our electron store
-  const store = new Store({
-    path: app.getPath("userData")
-  });
   store.mainBindings(ipcMain, win, fs);
 
   // Load app
@@ -269,13 +270,17 @@ let win;
 
 async function createWindow() {
 
+  const store = new Store({
+    path: app.getPath("userData")
+  });
+
   // Create the browser window.
   win = new BrowserWindow({
     width: 800,
     height: 600,
     webPreferences: {
       contextIsolation: true,
-      additionalArguments: [`storePath:${app.getPath("userData")}`], // important!
+      additionalArguments: [`--storePath=${store.sanitizePath(app.getPath("userData"))}`], // important!
       preload: path.join(__dirname, "preload.js") // a preload script is necessary!
     }
   });
@@ -288,10 +293,7 @@ async function createWindow() {
     
     win.maximize(); // modify BrowserWindow, for example
   };
-
-  const store = new Store({
-    path: app.getPath("userData")
-  });
+  
   store.mainBindings(ipcMain, win, fs, callback); // "callback" was added as the last parameter here!
 
   // Load app
@@ -367,7 +369,7 @@ async function createWindow() {
     height: savedConfig.height,
     webPreferences: {
       contextIsolation: true,
-      additionalArguments: [`storePath:${app.getPath("userData")}`], // important!
+      additionalArguments: [`--storePath=${store.sanitizePath(app.getPath("userData"))}`], // important!
       preload: path.join(__dirname, "preload.js") // a preload script is necessary!
     }
   });
