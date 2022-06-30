@@ -76,7 +76,7 @@ export default class Store {
         if (typeof options === "undefined" || options.path !== defaultOptions.path) {
             try {
                 const arg = process.argv.filter(p => p.indexOf("--storePath=") >= 0)[0];
-                this.options.path = arg.substr(arg.indexOf(":") + 1);
+                this.options.path = arg.substr(arg.indexOf("=") + 1);
                 this.options.path = this.options.path.replaceAll("||", "\\"); // As of Electron v14, passing "\" doesn't work in additionalArguments. We have to replace our token "||" with "\" to maintain functionality                
 
                 if (this.options.debug) console.log(`${this.rendererLog} initializing. Parsed 'storePath' value: '${this.options.path}'.`);
@@ -501,12 +501,12 @@ export default class Store {
         // The main process has no access to the passkey, since
         // it's intended that the passkey be passed in via the renderer
         // process
-        ipcMain.on(savePasskeyRequest, (IpcMainEvent, args) => {
+        ipcMain.on(savePasskeyRequest, (_IpcMainEvent, args) => {
             if (debug) {
-                console.log(`${this.mainLog} received a request to update the passkey to '${args.passkey}'.`);
+                console.log(`${this.mainLog} received a request to update the passkey to '${args.key}'.`);
             }
 
-            this.options.passkey = args.passkey;
+            this.options.passkey = args.key;
 
             // Redundant, but may be helpful?
             browserWindow.webContents.send(savePasskeyResponse, {
@@ -515,7 +515,7 @@ export default class Store {
         });
 
         // Anytime the renderer process requests for a file read
-        ipcMain.on(readConfigRequest, (IpcMainEvent, args) => {
+        ipcMain.on(readConfigRequest, (_IpcMainEvent, args) => {
             if (debug) {
                 console.log(`${this.mainLog} received a request to read from the key '${args.key}' from the given file '${path}'.`);
             }
@@ -593,7 +593,7 @@ export default class Store {
         });
 
         // Anytime the renderer process requests for a file write
-        ipcMain.on(writeConfigRequest, (IpcMainEvent, args) => {
+        ipcMain.on(writeConfigRequest, (_IpcMainEvent, args) => {
 
             // Wrapper function; since we call
             // this twice below
@@ -682,7 +682,7 @@ export default class Store {
         });
 
         // Anytime the main process needs to use the store        
-        ipcMain.on(useConfigInMainRequest, (IpcMainEvent, args) => {
+        ipcMain.on(useConfigInMainRequest, (_IpcMainEvent, _args) => {
             if (debug) {
                 console.log(`${this.mainLog} received a request to read store in electron main process.`);
             }
@@ -751,7 +751,7 @@ export default class Store {
         });
 
         // Deletes [unprotected] data files if requested
-        ipcMain.on(deleteUnprotectedConfigRequest, (IpcMainEvent, args) => {
+        ipcMain.on(deleteUnprotectedConfigRequest, (_IpcMainEvent, _args) => {
             if (debug) {
                 console.log(`${this.mainLog} received a request to delete unprotected data files.`);
             }
@@ -770,7 +770,7 @@ export default class Store {
         });
 
         // Anytime the renderer process requests for an unprotected file read
-        ipcMain.on(readUnprotectedConfigRequest, (IpcMainEvent, args) => {
+        ipcMain.on(readUnprotectedConfigRequest, (_IpcMainEvent, args) => {
             if (debug) {
                 console.log(`${this.mainLog} received a request to read from the key '${args.key}' from the given unprotected file '${unprotectedPath}'.`);
             }
@@ -822,7 +822,7 @@ export default class Store {
         });
 
         // Anytime the renderer process requests for an unprotected file write
-        ipcMain.on(writeUnprotectedConfigRequest, (IpcMainEvent, args) => {
+        ipcMain.on(writeUnprotectedConfigRequest, (_IpcMainEvent, args) => {
 
             // Wrapper function; since we call
             // this twice below
@@ -889,7 +889,7 @@ export default class Store {
         });
 
         // Anytime the main process needs to use the store        
-        ipcMain.on(useUnprotectedConfigInMainRequest, (IpcMainEvent, args) => {
+        ipcMain.on(useUnprotectedConfigInMainRequest, (_IpcMainEvent, _args) => {
             if (debug) {
                 console.log(`${this.mainLog} received a request to read unprotected store in electron main process.`);
             }
