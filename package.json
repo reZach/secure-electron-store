@@ -20,9 +20,9 @@
   },
   "homepage": "https://github.com/reZach/secure-electron-store#readme",
   "devDependencies": {
-    "@babel/cli": "^7.18.6",
-    "@babel/core": "^7.18.6",
-    "@babel/preset-env": "^7.18.6",
+    "@babel/cli": "^8.0.1",
+    "@babel/core": "^8.0.1",
+    "@babel/preset-env": "^8.0.2",
     "babel-preset-minify": "^0.5.2",
     "typescript": "^5.7.2"
   },
